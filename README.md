@@ -6,12 +6,34 @@ speaker, and the original audio kept underneath, deep-ducked.
 
 ## Dub a local video
 
+After the [one-time setup](#install):
+
 ```bash
 uv run podcast_dub "./interview.mp4" --from zh --to en
 ```
 
 `DUB_TRANSLATE_API_KEY` must already be set to a key for the configured
 Moonshot-compatible translation endpoint.
+
+## Demo
+
+This full-length development demo pairs the original Mandarin interview with
+an English dub using voice-cloned speech per speaker.
+
+For this demo, most model work ran on hardware we controlled: Qwen3 handled
+ASR, alignment, and TTS, while NVIDIA Sortformer handled diarization. The Kimi
+K3 API handled translation and timing-aware rewrites.
+
+The v0.1 release was acceptance-tested on a five-minute slice of the same
+source.
+
+| Original | English dub |
+|:---:|:---:|
+| [![Original Mandarin interview](https://img.youtube.com/vi/91fmhAnECVc/maxresdefault.jpg)](https://www.youtube.com/watch?v=91fmhAnECVc) | [![English dub of the same interview](https://img.youtube.com/vi/92BQg2oozBg/maxresdefault.jpg)](https://www.youtube.com/watch?v=92BQg2oozBg) |
+| [Watch original](https://www.youtube.com/watch?v=91fmhAnECVc) | [Watch English dub](https://www.youtube.com/watch?v=92BQg2oozBg) |
+
+The videos remain on YouTube; no source or dubbed media is stored in this
+repository.
 
 The complete pipeline runs and writes:
 
