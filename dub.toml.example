@@ -1,0 +1,17 @@
+# podcast_dub job file — copy to dub.toml and edit
+video = "/path/to/podcast.mp4"
+source_lang = "zh"
+target_lang = "en"
+# output = "/path/to/out_en.mp4"
+# context = "A short description that helps the translator resolve ambiguous speech."
+# proper_nouns = ["Guest Name", "Product Name"]
+# glossary = { "source term" = "preferred target term" }
+# speaker_names = ["host", "guest"]  # most to least detected speaking time
+# window_s = 300.0    # process only the first N seconds (0/unset = whole video)
+# workdir = "./podcast_dubwork"
+# asr_device = "auto"       # auto | cuda | mps | cpu
+# diarize_device = "auto"   # auto | cuda | cpu
+# tts_device = "auto"       # auto | cuda | mps | cpu
+llm_model = "kimi-k3"
+llm_base = "https://api.moonshot.ai/v1"
+# Set DUB_TRANSLATE_API_KEY in the environment; do not store credentials here.

@@ -1,0 +1,121 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "podcast-dub"
+version = "0.1.0"
+description = "Generic podcast dubbing pipeline: ASR+align timing, diarization, LLM translation, Qwen3-TTS voice cloning, sentence-flow placement"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Cezar Cocu" }]
+keywords = ["asr", "dubbing", "podcast", "translation", "tts"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+dependencies = [
+    "torch>=2.5",
+    "numpy>=2.0",
+    "soundfile>=0.13",
+    "huggingface-hub>=0.36",
+    # qwen-tts leaves this transitive floor open; older numba releases cannot
+    # build on the Python 3.12 required by this project.
+    "numba>=0.61",
+    "qwen-tts",
+    # TTS path: qwen-tts is incompatible with transformers 5.x (pin 4.x)
+    "transformers==4.57.3",
+    "accelerate",
+    # ASR path NOTE: Qwen3-ASR-1.7B + ForcedAligner need transformers>=5.x
+    # -> run those stages in a separate venv (.venv-asr) with transformers==5.14.1
+    "dspy>=3.3.0b1",
+    "openai>=2.48.0",
+    "pydantic>=2.10.6,<3",
+    "silero-vad>=5.1",
+    "yt-dlp>=2025.1.1",
+    "tqdm>=4.66",
+]
+
+[project.scripts]
+podcast_dub = "podcast_dub.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/cezarc1/podcast_dub"
+Source = "https://github.com/cezarc1/podcast_dub"
+Issues = "https://github.com/cezarc1/podcast_dub/issues"
+
+[project.optional-dependencies]
+# Linux + NVIDIA GPU only. Activate with: uv sync --extra cuda
+# NeMo/ASR stay in their helper venvs (.venv-nemo / .venv-asr); pin conflicts.
+cuda = [
+    "flash-attn>=2.7.4; sys_platform == 'linux'",
+    "packaging>=24; sys_platform == 'linux'",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "hypothesis>=6.0",
+    "ruff>=0.15.22",
+    "ty>=0.0.62",
+]
+
+# PyTorch: CUDA 13.0 wheels on Linux, default (MPS-capable) PyPI wheels elsewhere.
+# Per https://docs.astral.sh/uv/guides/integration/pytorch/ (project-interface pattern;
+# `uv pip install --torch-backend=auto` is the uv-pip-interface equivalent).
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cu130", marker = "sys_platform == 'linux'" },
+]
+torchvision = [
+    { index = "pytorch-cu130", marker = "sys_platform == 'linux'" },
+]
+
+[tool.uv]
+# flash-attn's build imports the runtime torch; otherwise its isolated build
+# environment cannot discover the selected CUDA/PyTorch combination.
+no-build-isolation-package = ["flash-attn"]
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/tests",
+    "/README.md",
+    "/SECURITY.md",
+    "/LICENSE",
+    "/pyproject.toml",
+    "/dub.toml.example",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/podcast_dub"]
+
+[tool.ruff]
+line-length = 120
+
+# Default ruff ruleset (https://docs.astral.sh/ruff/rules/)
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B", "C4", "DTZ", "PIE", "RUF100"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# tests/generic_pipeline_test.py is a standalone workdir-audit script, not a pytest module
+python_files = ["test_*.py"]
+
+[tool.ty.src]
+# maintained surface: the generic pipeline + tests. Excluded: dev/review
+# harnesses (kept for simulation + HTML review; not typed-strict).
+exclude = [
+    "src/podcast_dub/tools/turn_report.py",
+    "tests/generic_pipeline_test.py",
+]
