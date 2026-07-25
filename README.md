@@ -1,6 +1,6 @@
 # podcast_dub
 
-Dubs a video podcast into another language using all open-weight models:
+Dubs a video podcast into another language using all open-weight models. Inference can be performed *mostly* locally on your machine.
 
 * caption-free speech timing
 * automatic speaker separation (diarization)
