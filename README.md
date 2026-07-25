@@ -2,7 +2,8 @@
 
 Dubs a video podcast into another language using all open-weight models.
 
-This can be realistically performed *mostly* locally on most M-series Macs w/ >= 16Gb of RAM. The LLM translation stage is the only limiting factor as larger LLMs (>70B) have significantly better translation quality.
+The pipeline can run *mostly* locally on an M-series Mac with at least 16 GB of RAM. Translation is the main
+constraint, as larger LLMs (over 70 billion parameters) generally produce significantly better results. Feel free to experiment with different LLMs and configurations!
 
 * caption-free speech timing
 * automatic speaker separation (diarization)
