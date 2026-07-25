@@ -35,7 +35,7 @@ def test_complete_inputs_returns_empty_when_only_partials_exist(tmp_path) -> Non
     assert cli._complete_inputs(str(tmp_path)) == []
 
 
-def test_unknown_stage_runs_no_stage_function(tmp_path, monkeypatch) -> None:
+def test_unknown_stage_runs_no_stage_function(tmp_path, monkeypatch, capsys) -> None:
     """`--stages asr,bogus` must fail before ASR burns a full run."""
     video = tmp_path / "input.mp4"
     video.write_bytes(b"video")
@@ -71,9 +71,11 @@ def test_unknown_stage_runs_no_stage_function(tmp_path, monkeypatch) -> None:
 
     assert excinfo.value.code == "unknown stage: bogus"
     assert called == []
+    captured = capsys.readouterr()
+    assert "____  ____  ____/ /________" not in captured.err
 
 
-def test_valid_stages_still_dispatch(tmp_path, monkeypatch) -> None:
+def test_valid_stages_still_dispatch(tmp_path, monkeypatch, capsys) -> None:
     """The up-front check must not reject legitimate selections."""
     video = tmp_path / "input.mp4"
     video.write_bytes(b"video")
@@ -108,6 +110,8 @@ def test_valid_stages_still_dispatch(tmp_path, monkeypatch) -> None:
     cli.main()
 
     assert called == ["asr", "translate"]
+    captured = capsys.readouterr()
+    assert "____  ____  ____/ /________" in captured.err
 
 
 def test_malformed_toml_exits_two(tmp_path, monkeypatch) -> None:
@@ -122,7 +126,7 @@ def test_malformed_toml_exits_two(tmp_path, monkeypatch) -> None:
     assert excinfo.value.code == 2
 
 
-def test_missing_config_file_exits_two(tmp_path, monkeypatch) -> None:
+def test_missing_config_file_exits_two(tmp_path, monkeypatch, capsys) -> None:
     """A typo'd --config path is the likeliest config error; it must not traceback."""
     monkeypatch.setattr(sys, "argv", ["podcast_dub", "--config", str(tmp_path / "absent.toml")])
 
@@ -130,6 +134,8 @@ def test_missing_config_file_exits_two(tmp_path, monkeypatch) -> None:
         cli.main()
 
     assert excinfo.value.code == 2
+    captured = capsys.readouterr()
+    assert "____  ____  ____/ /________" not in captured.err
 
 
 def test_translate_stage_raises_runtime_error_without_api_key(tmp_path, monkeypatch, make_job_config) -> None:
