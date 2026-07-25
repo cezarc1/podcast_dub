@@ -7,12 +7,12 @@ import os
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from enum import StrEnum, auto
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from pydantic import AliasChoices, ConfigDict, Field, field_validator, model_validator
 
-from podcast_dub.types import ConcreteDevice, StrictModel
+from podcast_dub.types import DeviceChoice, StrictModel
 
 logger = logging.getLogger(__name__)
 
@@ -65,23 +65,6 @@ class TtsLanguage(StrEnum):
     PT = "pt"
     ES = "es"
     IT = "it"
-
-
-class DeviceChoice(StrEnum):
-    """A user-requestable device: the concrete backends plus the ``auto`` sentinel."""
-
-    AUTO = auto()
-    CUDA = ConcreteDevice.CUDA
-    MPS = ConcreteDevice.MPS
-    CPU = ConcreteDevice.CPU
-
-
-class DiarizeDeviceChoice(StrEnum):
-    """Like DeviceChoice, but diarization has no Metal (mps) backend."""
-
-    AUTO = auto()
-    CUDA = ConcreteDevice.CUDA
-    CPU = ConcreteDevice.CPU
 
 
 def lang_name(code: str) -> str:
@@ -154,7 +137,7 @@ class JobConfigInput(_JobConfigBase):
     llm_base: str | None = None
     llm_key: str | None = Field(default=None, repr=False, exclude=True)
     asr_device: DeviceChoice | None = None
-    diarize_device: DiarizeDeviceChoice | None = None
+    diarize_device: DeviceChoice | None = None
     tts_device: DeviceChoice | None = None
 
 
@@ -173,7 +156,7 @@ class JobConfig(_JobConfigBase):
     llm_base: str = Field(default=DEFAULT_TRANSLATE_BASE_URL, min_length=1)
     llm_key: str = Field(default="", repr=False, exclude=True)
     asr_device: DeviceChoice = DeviceChoice.AUTO
-    diarize_device: DiarizeDeviceChoice = DiarizeDeviceChoice.AUTO
+    diarize_device: DeviceChoice = DeviceChoice.AUTO
     tts_device: DeviceChoice = DeviceChoice.AUTO
 
     @model_validator(mode="after")

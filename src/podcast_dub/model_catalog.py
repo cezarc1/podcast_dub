@@ -1,7 +1,7 @@
 import json
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import assert_never, cast
 
 ASR_ID = "Qwen/Qwen3-ASR-1.7B-hf"
 ASR_REVISION = "bcd2b5b7f32b480ab5790554cfa8347f246a14f3"
@@ -25,21 +25,28 @@ _UNSAFE_CONFIG_FIELDS = frozenset(
     }
 )
 
+type _JsonValue = None | bool | int | float | str | list[_JsonValue] | dict[str, _JsonValue]
 
-def _unsafe_fields(value: Any) -> Iterator[str]:
-    """Yield unsafe field names at any depth, in document order (mappings and lists only)."""
-    if isinstance(value, Mapping):
-        for key, nested in value.items():
-            if key in _UNSAFE_CONFIG_FIELDS:
-                yield str(key)
-            else:
+
+def _unsafe_fields(value: _JsonValue) -> Iterator[str]:
+    """Yield unsafe field names from a decoded JSON value, in document order."""
+    match value:
+        case dict():
+            for key, nested in value.items():
+                if key in _UNSAFE_CONFIG_FIELDS:
+                    yield key
+                else:
+                    yield from _unsafe_fields(nested)
+        case list():
+            for nested in value:
                 yield from _unsafe_fields(nested)
-    elif isinstance(value, list):
-        for nested in value:
-            yield from _unsafe_fields(nested)
+        case None | bool() | int() | float() | str():
+            return
+        case _:
+            assert_never(value)
 
 
-def _unsafe_field(value: Any) -> str | None:
+def _unsafe_field(value: _JsonValue) -> str | None:
     return next(_unsafe_fields(value), None)
 
 
@@ -51,7 +58,7 @@ def validate_model_snapshot(snapshot_path: str | Path) -> None:
         raise RuntimeError(f"model snapshot has no config.json: {root}")
     for config_path in config_paths:
         try:
-            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config = cast(_JsonValue, json.loads(config_path.read_text(encoding="utf-8")))
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise RuntimeError(f"invalid model config {config_path}: {exc}") from exc
         if (field := _unsafe_field(config)) is not None:

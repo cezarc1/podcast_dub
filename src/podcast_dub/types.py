@@ -23,6 +23,15 @@ class ConcreteDevice(StrEnum):
     CPU = auto()
 
 
+class DeviceChoice(StrEnum):
+    """A user-requestable device: the concrete backends plus the ``auto`` sentinel."""
+
+    AUTO = auto()
+    CUDA = ConcreteDevice.CUDA
+    MPS = ConcreteDevice.MPS
+    CPU = ConcreteDevice.CPU
+
+
 class ModelStage(StrEnum):
     """The pipeline stages that load an ML model onto a device — a subset of StageName."""
 

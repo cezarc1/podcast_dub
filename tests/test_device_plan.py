@@ -6,7 +6,7 @@ import pytest
 
 from podcast_dub import device_utils
 from podcast_dub.device_utils import resolve_device_plan
-from podcast_dub.types import ConcreteDevice, ModelStage
+from podcast_dub.types import ConcreteDevice, DeviceChoice, ModelStage
 
 
 def test_hardware_probe_failure_logs_exception_and_assumes_cpu(monkeypatch, caplog) -> None:
@@ -16,7 +16,7 @@ def test_hardware_probe_failure_logs_exception_and_assumes_cpu(monkeypatch, capl
     monkeypatch.setattr(device_utils.torch.cuda, "is_available", fail_probe)
 
     with caplog.at_level(logging.ERROR, logger=device_utils.__name__):
-        plan = resolve_device_plan(ModelStage.TTS, "auto")
+        plan = resolve_device_plan(ModelStage.TTS, DeviceChoice.AUTO)
 
     assert plan.device == ConcreteDevice.CPU
     assert "hardware probe failed; assuming CPU-only" in caplog.text
@@ -31,7 +31,7 @@ def test_missing_flash_attention_logs_debug_fallback(monkeypatch, caplog) -> Non
     monkeypatch.setattr(device_utils.importlib, "import_module", missing_flash_attention)
 
     with caplog.at_level(logging.DEBUG, logger=device_utils.__name__):
-        plan = resolve_device_plan(ModelStage.TTS, "auto", cuda_available=True, mps_available=False)
+        plan = resolve_device_plan(ModelStage.TTS, DeviceChoice.AUTO, cuda_available=True, mps_available=False)
 
     assert plan.attention == "sdpa"
     assert "flash-attn unavailable; using sdpa" in caplog.text
@@ -47,15 +47,37 @@ def test_missing_flash_attention_logs_debug_fallback(monkeypatch, caplog) -> Non
     ],
 )
 def test_auto_device_plan_is_stage_specific(stage, cuda, mps, expected) -> None:
-    plan = resolve_device_plan(stage, "auto", cuda_available=cuda, mps_available=mps)
+    plan = resolve_device_plan(stage, DeviceChoice.AUTO, cuda_available=cuda, mps_available=mps)
 
     assert plan.device == expected
     assert plan.stage == stage
 
 
-def test_explicit_unavailable_device_is_rejected() -> None:
-    with pytest.raises(RuntimeError, match="cuda"):
-        resolve_device_plan(ModelStage.TTS, "cuda", cuda_available=False, mps_available=True)
+@pytest.mark.parametrize(
+    ("requested", "cuda", "mps", "expected"),
+    [
+        (DeviceChoice.CUDA, True, False, ConcreteDevice.CUDA),
+        (DeviceChoice.MPS, False, True, ConcreteDevice.MPS),
+        (DeviceChoice.CPU, False, False, ConcreteDevice.CPU),
+    ],
+)
+def test_explicit_device_plan(requested, cuda, mps, expected) -> None:
+    plan = resolve_device_plan(ModelStage.TTS, requested, cuda_available=cuda, mps_available=mps)
+
+    assert plan.device == expected
+
+
+@pytest.mark.parametrize(
+    ("stage", "requested", "cuda", "mps", "message"),
+    [
+        (ModelStage.TTS, DeviceChoice.CUDA, False, True, "cuda"),
+        (ModelStage.DIARIZE, DeviceChoice.MPS, False, True, "not supported"),
+        (ModelStage.TTS, DeviceChoice.MPS, False, False, "unavailable"),
+    ],
+)
+def test_unavailable_or_unsupported_explicit_device_is_rejected(stage, requested, cuda, mps, message) -> None:
+    with pytest.raises(RuntimeError, match=message):
+        resolve_device_plan(stage, requested, cuda_available=cuda, mps_available=mps)
 
 
 def test_helper_python_defaults_to_current_project(monkeypatch, tmp_path) -> None:

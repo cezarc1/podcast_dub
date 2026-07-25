@@ -4,7 +4,9 @@ import logging
 import pytest
 from pydantic import ValidationError
 
+from podcast_dub.config import DeviceChoice as ConfigDeviceChoice
 from podcast_dub.config import lang_name, load_toml, merge_cli, resolve_translation_api
+from podcast_dub.types import DeviceChoice
 
 
 def test_unknown_language_name_warns_before_using_code_verbatim(caplog) -> None:
@@ -33,6 +35,44 @@ llm_key = "test-key"
     assert cfg.llm_model == "test-model"
     assert cfg.llm_base == "https://example.test/v1"
     assert cfg.llm_key == "test-key"
+
+
+def test_device_fields_use_shared_choice(tmp_path):
+    config = tmp_path / "dub.toml"
+    config.write_text(
+        """
+video = "episode.mp4"
+source_lang = "zh"
+target_lang = "en"
+asr_device = "cuda"
+diarize_device = "mps"
+tts_device = "cpu"
+""".strip()
+    )
+
+    cfg_input = load_toml(config)
+    cfg = merge_cli(cfg_input, argparse.Namespace())
+
+    assert ConfigDeviceChoice is DeviceChoice
+    assert (cfg_input.asr_device, cfg_input.diarize_device, cfg_input.tts_device) == (
+        DeviceChoice.CUDA,
+        DeviceChoice.MPS,
+        DeviceChoice.CPU,
+    )
+    assert (cfg.asr_device, cfg.diarize_device, cfg.tts_device) == (
+        DeviceChoice.CUDA,
+        DeviceChoice.MPS,
+        DeviceChoice.CPU,
+    )
+
+
+@pytest.mark.parametrize("field", ["asr_device", "diarize_device", "tts_device"])
+def test_config_rejects_unknown_device(tmp_path, field):
+    config = tmp_path / "dub.toml"
+    config.write_text(f'video = "episode.mp4"\nsource_lang = "zh"\ntarget_lang = "en"\n{field} = "tpu"')
+
+    with pytest.raises(ValidationError, match=field):
+        load_toml(config)
 
 
 def test_merge_preserves_secret_without_serializing_it(tmp_path):

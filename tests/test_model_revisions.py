@@ -1,3 +1,4 @@
+import json
 import re
 
 import pytest
@@ -22,6 +23,22 @@ def test_model_snapshot_preflight_accepts_plain_local_configs(tmp_path):
     nested = tmp_path / "speech_tokenizer"
     nested.mkdir()
     (nested / "config.json").write_text('{"model_type": "qwen3_tts_tokenizer"}')
+
+    validate = getattr(model_catalog, "validate_model_snapshot", None)
+    assert validate is not None
+    validate(tmp_path)
+
+
+def test_model_snapshot_preflight_accepts_all_json_leaf_types(tmp_path):
+    config = {
+        "string": "value",
+        "boolean": True,
+        "integer": 1,
+        "float": 0.5,
+        "null": None,
+        "nested": [{"enabled": False}],
+    }
+    (tmp_path / "config.json").write_text(json.dumps(config))
 
     validate = getattr(model_catalog, "validate_model_snapshot", None)
     assert validate is not None

@@ -2,11 +2,11 @@ import importlib
 import logging
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, assert_never
 
 import torch
 
-from podcast_dub.types import ConcreteDevice, DevicePlan, ModelStage
+from podcast_dub.types import ConcreteDevice, DeviceChoice, DevicePlan, ModelStage
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ def _availability() -> tuple[bool, bool]:
 
 def resolve_device_plan(
     stage: ModelStage,
-    requested: str,
+    requested: DeviceChoice,
     *,
     cuda_available: bool | None = None,
     mps_available: bool | None = None,
@@ -51,27 +51,28 @@ def resolve_device_plan(
     detected_cuda, detected_mps = _availability()
     cuda = detected_cuda if cuda_available is None else cuda_available
     mps = detected_mps if mps_available is None else mps_available
-    if requested == "auto":
-        if cuda:
+    match requested:
+        case DeviceChoice.AUTO:
+            if cuda:
+                device = ConcreteDevice.CUDA
+            elif mps and stage != ModelStage.DIARIZE:
+                device = ConcreteDevice.MPS
+            else:
+                device = ConcreteDevice.CPU
+        case DeviceChoice.CUDA:
+            if not cuda:
+                raise RuntimeError(f"{stage}: cuda was requested but is unavailable")
             device = ConcreteDevice.CUDA
-        elif mps and stage != ModelStage.DIARIZE:
+        case DeviceChoice.MPS:
+            if stage == ModelStage.DIARIZE:
+                raise RuntimeError("diarize: mps is not supported; choose auto, cuda, or cpu")
+            if not mps:
+                raise RuntimeError(f"{stage}: mps was requested but is unavailable")
             device = ConcreteDevice.MPS
-        else:
+        case DeviceChoice.CPU:
             device = ConcreteDevice.CPU
-    elif requested == "cuda":
-        if not cuda:
-            raise RuntimeError(f"{stage}: cuda was requested but is unavailable")
-        device = ConcreteDevice.CUDA
-    elif requested == "mps":
-        if stage == ModelStage.DIARIZE:
-            raise RuntimeError("diarize: mps is not supported; choose auto, cuda, or cpu")
-        if not mps:
-            raise RuntimeError(f"{stage}: mps was requested but is unavailable")
-        device = ConcreteDevice.MPS
-    elif requested == "cpu":
-        device = ConcreteDevice.CPU
-    else:
-        raise RuntimeError(f"{stage}: unsupported device {requested!r}")
+        case _:
+            assert_never(requested)
 
     dtype = "bfloat16" if device in (ConcreteDevice.CUDA, ConcreteDevice.MPS) else "float32"
     if device == ConcreteDevice.CUDA:
@@ -99,5 +100,5 @@ if __name__ == "__main__":
     from podcast_dub.logging_config import configure_logging
 
     configure_logging()
-    plan = resolve_device_plan(ModelStage.TTS, "auto")
+    plan = resolve_device_plan(ModelStage.TTS, DeviceChoice.AUTO)
     logger.info("device=%s dtype=%s attn=%s", plan.device, plan.dtype, plan.attention)
