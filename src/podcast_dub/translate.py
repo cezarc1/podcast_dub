@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from typing import Protocol
 
 import dspy
 from dspy import Prediction
 
+logger = logging.getLogger(__name__)
 
 class TranslateSpokenASR(dspy.Signature):
     """
@@ -51,6 +53,7 @@ def _word_fit_reward(args: dict, pred: Prediction) -> float:
     target_word_count = int(args["target_word_count"])
     actual_word_count = len(pred.target_translated_text.split())
     if not actual_word_count:
+        logger.warning(f"No words in translated text. {pred}")
         return 0.0
     error = abs(actual_word_count - target_word_count)
     tolerance = max(1.0, 0.05 * target_word_count)
@@ -80,8 +83,6 @@ def make_translator(
         reward_fn=_word_fit_reward,
         threshold=1.0,
     )
-    proper_nouns_text = ", ".join(proper_nouns)
-    glossary_text = "\n".join(f"{source} -> {target}" for source, target in (glossary or {}).items())
 
     def _translate(previous_context: str, text_to_translate: str, target_word_count: int) -> str:
         with dspy.context(lm=lm):
@@ -89,8 +90,8 @@ def make_translator(
                 source_language=source_language,
                 target_language=target_language,
                 job_context=job_context,
-                proper_nouns=proper_nouns_text,
-                glossary=glossary_text,
+                proper_nouns=", ".join(proper_nouns),
+                glossary="\n".join(f"{source} -> {target}" for source, target in (glossary or {}).items()),
                 previous_context=previous_context,
                 text_to_translate=text_to_translate,
                 target_word_count=target_word_count,

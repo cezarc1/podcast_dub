@@ -41,7 +41,6 @@ from podcast_dub.stages.tts import run_tts
 
 logger = logging.getLogger(__name__)
 
-
 def fetch_if_url(cfg: JobConfig) -> JobConfig:
     """Download the input video into the workdir when cfg.video is a URL."""
     if not cfg.video.startswith(("http://", "https://")):
@@ -51,7 +50,7 @@ def fetch_if_url(cfg: JobConfig) -> JobConfig:
     existing = [f for f in os.listdir(workdir) if f.startswith("input.")]
     if existing:
         fetched = cfg.validated_copy(video=os.path.join(workdir, existing[0]))
-        print(f"fetch: cached {fetched.video}")
+        logger.info(f"fetch: cached {fetched.video}")
         return fetched
     tmpl = os.path.join(workdir, "input.%(ext)s")
     subprocess.run(["yt-dlp", "-f", "bv*+ba/b", "-o", tmpl, cfg.video], check=True)
@@ -59,7 +58,7 @@ def fetch_if_url(cfg: JobConfig) -> JobConfig:
     if len(got) != 1:
         sys.exit(f"fetch: expected one input.* in {workdir}, got {got}")
     fetched = cfg.validated_copy(video=os.path.join(workdir, got[0]))
-    print(f"fetch: downloaded -> {fetched.video}")
+    logger.info(f"fetch: downloaded -> {fetched.video}")
     return fetched
 
 
@@ -73,7 +72,7 @@ def probe(cfg: JobConfig) -> float:
             ["ffmpeg", "-v", "error", "-y", "-i", cfg.video, "-vn", "-ac", "1", "-ar", "16000", audio], check=True
         )
     duration = dur_of(cfg.video)
-    print(f"probe: {cfg.video} -> {audio} ({duration:.1f}s)")
+    logger.info(f"probe: {cfg.video} -> {audio} ({duration:.1f}s)")
     return duration
 
 
@@ -100,36 +99,34 @@ def main():
     try:
         cfg = merge_cli(cfg_input, args)
     except ValidationError as exc:
-        print(f"error: invalid job configuration\n{exc}", file=sys.stderr)
-        print("\nusage: podcast_dub <video> --from <lang> --to <lang> [--config dub.toml]", file=sys.stderr)
+        logger.error(f"error: invalid job configuration\n{exc}")
+        logger.error("\nusage: podcast_dub <video> --from <lang> --to <lang> [--config dub.toml]")
         sys.exit(2)
     cfg = fetch_if_url(cfg)
-    problems = cfg.validation_problems()
-    if problems:
+    if problems := cfg.validation_problems():
         for p in problems:
-            print(f"error: {p}", file=sys.stderr)
-        print("\nusage: podcast_dub <video> --from <lang> --to <lang> [--config dub.toml]", file=sys.stderr)
+            logger.error(f"error: {p}")
+        logger.error("\nusage: podcast_dub <video> --from <lang> --to <lang> [--config dub.toml]")
         sys.exit(2)
 
-    print(f"job: {os.path.basename(cfg.video)}  {cfg.source_lang} -> {cfg.target_lang}")
-    print(f"workdir: {cfg.resolved_workdir()}")
-    print(f"output: {cfg.resolved_output()}")
+    logger.info(f"job: {os.path.basename(cfg.video)}  {cfg.source_lang} -> {cfg.target_lang}")
+    logger.info(f"workdir: {cfg.resolved_workdir()}")
+    logger.info(f"output: {cfg.resolved_output()}")
     stages = [s.strip() for s in args.stages.split(",")]
-    print(f"stages: {', '.join(stages)}")
+    logger.info(f"stages: {', '.join(stages)}")
     plans = (
         resolve_device_plan(ModelStage.ASR, cfg.asr_device),
         resolve_device_plan(ModelStage.DIARIZE, cfg.diarize_device),
         resolve_device_plan(ModelStage.TTS, cfg.tts_device),
     )
-    print(
+    logger.info(
         "devices: "
         + ", ".join(
             f"{plan.stage}={plan.device}/{plan.dtype}/{plan.attention}" for plan in plans if plan.stage in stages
         )
     )
 
-    duration = probe(cfg) if "probe" in stages else cfg.window_s
-    if not duration:
+    if not (duration := probe(cfg) if "probe" in stages else cfg.window_s):
         duration = dur_of(cfg.video)
     if not cfg.window_s:
         cfg = cfg.validated_copy(window_s=duration + 0.5)
