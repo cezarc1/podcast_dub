@@ -2,7 +2,7 @@
 
 Dubs a video podcast into another language using all open-weight models.
 
-This can be realistically performed *mostly* locally on most M-series Macs w/ > 16Gb of RAM. The LLM translation stage is the only limiting factor as larger LLMs (>70B) have significantly better translation quality.
+This can be realistically performed *mostly* locally on most M-series Macs w/ >= 16Gb of RAM. The LLM translation stage is the only limiting factor as larger LLMs (>70B) have significantly better translation quality.
 
 * caption-free speech timing
 * automatic speaker separation (diarization)
@@ -233,6 +233,10 @@ uv build                       # source + wheel distributions
 # audit the typed artifacts and media in a completed workdir
 uv run python tests/generic_pipeline_test.py <workdir>
 ```
+
+## TODO
+
+* Investigate translation quality using multimodal LLMs (e.g. Gemma 4) that can consume audio directly, potentially replacing the separate ASR and LLM translation stages.
 
 ## License
 
