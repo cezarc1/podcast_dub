@@ -39,7 +39,7 @@ def test_unknown_stage_runs_no_stage_function(tmp_path, monkeypatch) -> None:
     """`--stages asr,bogus` must fail before ASR burns a full run."""
     video = tmp_path / "input.mp4"
     video.write_bytes(b"video")
-    called: list[str] = []
+    called = []
 
     def _recorder(name: str):
         def _run(cfg: JobConfig) -> str:
@@ -77,7 +77,7 @@ def test_valid_stages_still_dispatch(tmp_path, monkeypatch) -> None:
     """The up-front check must not reject legitimate selections."""
     video = tmp_path / "input.mp4"
     video.write_bytes(b"video")
-    called: list[str] = []
+    called = []
 
     def _recorder(name: str):
         def _run(cfg: JobConfig) -> str:

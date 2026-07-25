@@ -22,7 +22,7 @@ def test_configure_logging_sets_info_message_only_format(capsys) -> None:
 
 
 def test_package_has_no_print_calls() -> None:
-    offenders: list[str] = []
+    offenders = []
     for path in sorted(PACKAGE_ROOT.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):

@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 def group_units(cues: Sequence[SubtitleCue]) -> tuple[SubtitleUnit, ...]:
     """Group subtitle cues without mutating their source values."""
-    units: list[SubtitleUnit] = []
+    units = []
     for cue in cues:
         frames = tuple(range(int(cue.start * 2), int(cue.end * 2)))
         if (
@@ -53,8 +53,8 @@ def simulate(
     total: float,
 ) -> tuple[tuple[float, float], ...]:
     """Predict anchored placement windows for typed turn records."""
-    placements: list[tuple[float, float]] = []
-    previous_end: float | None = None
+    placements = []
+    previous_end = None
     for index, turn in enumerate(turns):
         next_start = turns[index + 1].start if index + 1 < len(turns) else total
         if previous_end is None:

@@ -236,7 +236,6 @@ def merge_cli(cfg: JobConfigInput, args: argparse.Namespace) -> JobConfig:
         "workdir": getattr(args, "workdir", None),
     }
     values.update({key: value for key, value in scalar_overrides.items() if value is not None})
-    names = getattr(args, "names", None)
-    if names:
+    if names := getattr(args, "names", None):
         values["speaker_names"] = tuple(name.strip() for name in names.split(",") if name.strip())
     return JobConfig.model_validate(values)

@@ -132,8 +132,8 @@ def _group_phrases(timestamps: Sequence[AlignedWord], offset: float) -> tuple[Ph
     words = tuple(PhraseWord(text=word.text, start=word.start + offset, end=word.end + offset) for word in timestamps)
     if not words:
         raise RuntimeError("asr: forced aligner returned no words")
-    phrases: list[list[PhraseWord]] = []
-    cur: list[PhraseWord] = [words[0]]
+    phrases = []
+    cur = [words[0]]
     for a, b in itertools.pairwise(words):
         if b.start - a.end > PHRASE_GAP_S or SENT_END_ZH.search(a.text) or b.start - cur[0].start > MAX_PHRASE_S:
             phrases.append(cur)
@@ -154,7 +154,7 @@ def _group_phrases(timestamps: Sequence[AlignedWord], offset: float) -> tuple[Ph
 
 def _chunk_ranges(limit_s: float) -> tuple[tuple[float, float], ...]:
     """Return bounded ``(offset, duration)`` ranges that never cross the requested limit."""
-    ranges: list[tuple[float, float]] = []
+    ranges = []
     offset = 0.0
     while offset < limit_s:
         duration = min(CHUNK_S, limit_s - offset)
@@ -165,7 +165,7 @@ def _chunk_ranges(limit_s: float) -> tuple[tuple[float, float], ...]:
 
 def _validate_alignment_quality(words: Sequence[AlignedWord]) -> None:
     """Reject timestamp saturation while allowing small quantization ties."""
-    collapsed_at: float | None = None
+    collapsed_at = None
     collapsed_run = 0
     for word in words:
         if word.end == word.start:
@@ -215,7 +215,7 @@ def _run_asr_inline(request: AsrBackendRequest) -> AsrBackendResult:
     )
     logger.info("asr: loaded models. Beginning ASR...")
 
-    all_words: list[AlignedWord] = []
+    all_words = []
     progress = tqdm(enumerate(chunk_ranges), total=len(chunk_ranges), desc="asr", unit="chunk")
     for i, (off, chunk_duration_s) in progress:
         seg = subprocess.run(

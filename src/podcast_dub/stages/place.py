@@ -36,8 +36,7 @@ logger = logging.getLogger(__name__)
 
 def _mix_add(mix: np.ndarray, offset: int, audio: np.ndarray) -> int:
     room = max(len(mix) - offset, 0)
-    trimmed = max(len(audio) - room, 0)
-    if trimmed:
+    if trimmed := max(len(audio) - room, 0):
         audio = audio[:room]
     mix[offset : offset + len(audio)] += audio
     return trimmed
@@ -82,8 +81,7 @@ def run_place(cfg: JobConfig) -> str:
         input_files={"turns": turns_path, "video": cfg.video},
         parameters={"timing_policy_version": TIMING_POLICY_VERSION, "bed_filter": BED_FILTER},
     )
-    cached = load_cached_artifact(result_path, PLACEMENT_RESULT, provenance)
-    if cached is not None:
+    if (cached := load_cached_artifact(result_path, PLACEMENT_RESULT, provenance)) is not None:
         required = (cached.output_file, cached.voice_file, cached.mix_file, cached.subtitles_file)
         if all(os.path.exists(path) for path in required):
             verification = verify_media(cfg.resolved_audio(), cached.voice_file)
@@ -118,8 +116,7 @@ def run_place(cfg: JobConfig) -> str:
             )
         progress.set_postfix_str(f"t{logical_turn.turn_id} {logical_turn.speaker} lag{assessment.lag_s:+.1f}")
 
-    peak = float(np.max(np.abs(mix)))
-    if peak > 0.89:
+    if (peak := float(np.max(np.abs(mix)))) > 0.89:
         mix *= 0.89 / peak
     voice = os.path.join(workdir, "dub_voice.wav")
     write_wav_pcm16(voice, (np.clip(mix, -1, 1) * 32767).astype(np.int16), SR)

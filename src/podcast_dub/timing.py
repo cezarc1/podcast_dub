@@ -45,9 +45,9 @@ def group_by_logical_turns(
     stage: TimingStage,
 ) -> tuple[LogicalTurn, ...]:
     """Group consecutive chunks while validating logical-turn identity."""
-    grouped: list[LogicalTurn] = []
-    current: list[TurnChunk] = []
-    closed_turn_ids: set[int] = set()
+    grouped = []
+    current = []
+    closed_turn_ids = set()
     for chunk in chunks:
         if current and chunk.turn_id != current[0].turn_id:
             closed_turn_ids.add(current[0].turn_id)
@@ -82,8 +82,8 @@ def evaluate_timeline(
     stage: TimingStage,
 ) -> tuple[FittedTurn, ...]:
     """Decode, assemble, fit, and assess turns using placement's exact policy."""
-    fitted: list[FittedTurn] = []
-    previous_end_s: float | None = None
+    fitted = []
+    previous_end_s = None
     gap = np.zeros(round(INTER_CHUNK_GAP_S * SR), dtype=np.float32)
 
     for index, turn in enumerate(turns):
@@ -123,7 +123,7 @@ def evaluate_timeline(
         fit_result = fit_audio(audio, window_s)
         fitted_audio = fit_result.audio
         fitted_duration_s = fitted_audio.size / SR
-        direction: Literal["tighter", "fuller"] | None = None
+        direction = None
         if fitted_duration_s > window_s * LONG_OK:
             direction = "tighter"
         elif (

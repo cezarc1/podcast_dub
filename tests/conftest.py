@@ -10,7 +10,7 @@ def make_job_config(tmp_path):
     """JobConfig factory bound to tmp_path with the minimal required fields."""
 
     def _make(**overrides: Any) -> JobConfig:
-        values: dict[str, Any] = {
+        values = {
             "video": str(tmp_path / "input.mp4"),
             "source_lang": "zh",
             "target_lang": "en",

@@ -79,8 +79,8 @@ logger = logging.getLogger(__name__)
 
 def _split_target_text(text: str) -> tuple[str, ...]:
     sentences = tuple(part for part in re.split(r"(?<=[.!?…])\s+", text) if part)
-    parts: list[str] = []
-    current: list[str] = []
+    parts = []
+    current = []
     current_words = 0
     for sentence in sentences:
         words = sentence.split()
@@ -136,7 +136,7 @@ def _split_oversized_unit(unit: TranslationUnit) -> tuple[TranslationUnit, ...]:
     duration = end - start
     total_weight = sum(weights)
     offset = start
-    fragments: list[TranslationUnit] = []
+    fragments = []
     cumulative_weight = 0
     for index, (source, target, weight) in enumerate(zip(source_parts, target_parts, weights, strict=True)):
         cumulative_weight += weight
@@ -161,7 +161,7 @@ def _balance_turn_parts(turn: list[TranslationUnit], part_count: int) -> list[li
 
     remaining_words = sum(len(unit.target_text.split()) for unit in turn)
     start = 0
-    parts: list[list[TranslationUnit]] = []
+    parts = []
     for part_index in range(part_count):
         parts_left = part_count - part_index
         if parts_left == 1:
@@ -214,7 +214,7 @@ def _greedy_part_count(turn: Sequence[TranslationUnit]) -> int:
 
 def build_turns(units: Sequence[TranslationUnit]) -> tuple[TurnChunkDraft, ...]:
     """Coalesce adjacent units, then split oversized logical turns."""
-    turns: list[list[TranslationUnit]] = []
+    turns = []
     for unit in units:
         for fragment in _split_oversized_unit(unit):
             previous = turns[-1][-1] if turns else None
@@ -227,7 +227,7 @@ def build_turns(units: Sequence[TranslationUnit]) -> tuple[TurnChunkDraft, ...]:
             else:
                 turns.append([fragment])
 
-    chunks: list[TurnChunkDraft] = []
+    chunks = []
     for turn_id, turn in enumerate(turns):
         turn_start = turn[0].start
         turn_end = max(unit.end if unit.end > unit.start else unit.start + MIN_UNIT_SPAN_S for unit in turn)
@@ -278,9 +278,9 @@ def snap_turn_starts(
     if not onsets:
         raise RuntimeError("tts: no speech detected in source audio")
     adjusted = list(chunks)
-    seen: set[int] = set()
+    seen = set()
     nudged = 0
-    dropped: set[int] = set()
+    dropped = set()
     for index, chunk in enumerate(chunks):
         if chunk.turn_id in seen or chunk.part_index != 0:
             continue
@@ -294,8 +294,7 @@ def snap_turn_starts(
             dropped.add(chunk.turn_id)
             continue
         onset = max(candidates)
-        nudge = (onset - pad) - chunk.start
-        if abs(nudge) > 0.05:
+        if abs(nudge := (onset - pad) - chunk.start) > 0.05:
             adjusted[index] = chunk.validated_copy(
                 start=round(onset - pad, 2),
                 end=round(chunk.end + nudge, 2),
@@ -372,8 +371,7 @@ class _CachedTranslator:
         return hashlib.sha1(payload, usedforsecurity=False).hexdigest()
 
     def _store(self, key: str, value: str) -> None:
-        value = value.strip()
-        if not value:
+        if not (value := value.strip()):
             raise RuntimeError("tts: rewrite returned empty text")
         self._cache[key] = value
         model = RewriteCache(
@@ -461,8 +459,7 @@ def _allocate_rewrite_budgets(
     target = min(ceiling * len(word_counts), max(floor * len(word_counts), round(sum(word_counts) * scale)))
     budgets = [floor] * len(word_counts)
     while sum(budgets) < target:
-        candidates = [index for index, budget in enumerate(budgets) if budget < ceiling]
-        if not candidates:
+        if not (candidates := [index for index, budget in enumerate(budgets) if budget < ceiling]):
             break
         index = min(candidates, key=lambda candidate: (budgets[candidate] / word_counts[candidate], candidate))
         budgets[index] += 1
@@ -490,7 +487,7 @@ def _interpolate_rewrite_budgets(
         raise ValueError("rewrite word-count bounds must be strictly ordered")
 
     fraction = (target_duration_s - lower_duration_s) / (upper_duration_s - lower_duration_s)
-    budgets: list[int] = []
+    budgets = []
     for lower, upper in zip(lower_word_counts, upper_word_counts, strict=True):
         budget = round(lower + fraction * (upper - lower))
         if upper - lower > 1:
@@ -571,8 +568,7 @@ def run_tts(cfg: JobConfig) -> str:
         model=ModelIdentity(identifier=TTS_ID, revision=TTS_REVISION),
         execution_plan=plan,
     )
-    cached = load_cached_artifact(out_json, TURN_CHUNKS, provenance)
-    if cached is not None:
+    if (cached := load_cached_artifact(out_json, TURN_CHUNKS, provenance)) is not None:
         for chunk in cached:
             if not os.path.exists(chunk.audio_file) or file_digest(chunk.audio_file) != chunk.audio_sha256:
                 raise ArtifactError(f"tts: cached audio does not match artifact metadata: {chunk.audio_file}")
@@ -614,7 +610,7 @@ def run_tts(cfg: JobConfig) -> str:
     model = Qwen3TTSModel.from_pretrained(model_path, **model_kwargs_for(plan))
     references = read_artifact(references_path, SPEAKER_REFERENCES).payload
     reference_by_speaker = {reference.speaker: reference for reference in references}
-    prompts: dict[str, Any] = {}
+    prompts = {}
     for speaker in sorted({draft.speaker for draft in drafts}):
         reference = reference_by_speaker.get(speaker)
         if reference is None:
@@ -629,7 +625,7 @@ def run_tts(cfg: JobConfig) -> str:
         )
         logger.info("tts: clone prompt ready: %s", speaker)
 
-    chunks: list[TurnChunk] = []
+    chunks = []
     progress = tqdm(enumerate(drafts), total=len(drafts), desc="tts", unit="chunk")
     for index, draft in progress:
         destination = cache_path(index, draft)
@@ -647,7 +643,7 @@ def run_tts(cfg: JobConfig) -> str:
         progress.set_postfix_str(f"{time.monotonic() - started:.0f}s/chunk")
 
     key = translation_api.api_key
-    cached_translator: _CachedTranslator | None = None
+    cached_translator = None
     if key:
         translator = make_translator(
             source_language=lang_name(cfg.source_lang),
@@ -675,18 +671,17 @@ def run_tts(cfg: JobConfig) -> str:
             ),
         )
 
-    lower_samples: dict[int, _BudgetSample] = {}
-    upper_samples: dict[int, _BudgetSample] = {}
+    lower_samples = {}
+    upper_samples = {}
     for attempt in range(MAX_REWRITE_ATTEMPTS):
-        work = _select_rewrite_work(_evaluate_chunks(chunks, total_s=total))
-        if not work:
+        if not (work := _select_rewrite_work(_evaluate_chunks(chunks, total_s=total))):
             break
         if cached_translator is None:
             raise RuntimeError("tts: measured audio requires rewriting but no translation API key is configured")
 
         # Compute every rewrite job from round-start state before regenerating any audio.
         chunk_index_by_part = {(chunk.turn_id, chunk.part_index): index for index, chunk in enumerate(chunks)}
-        jobs: list[_RewriteJob] = []
+        jobs = []
         for fitted_turn in work:
             logical_turn = fitted_turn.logical_turn
             assessment = fitted_turn.assessment

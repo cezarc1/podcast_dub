@@ -153,8 +153,7 @@ def run_translate(cfg: JobConfig) -> str:
     merged = {}
     for path in sorted(tr_dir.glob("batch_*.json")):
         batch = _read_batch(path)
-        overlap = set(merged).intersection(batch.translations)
-        if overlap:
+        if overlap := set(merged).intersection(batch.translations):
             raise RuntimeError(f"translate: duplicate cached translation ids {sorted(overlap)} in {path}")
         merged.update(batch.translations)
     if missing := [i for i in range(len(phrases)) if i not in merged]:

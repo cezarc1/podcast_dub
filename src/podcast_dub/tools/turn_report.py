@@ -37,7 +37,7 @@ def main() -> None:
         placement_by_turn.setdefault(chunk.turn_id, placement)
 
     logical = []
-    part_counts: dict[int, int] = {}
+    part_counts = {}
     for chunk in chunks:
         part_counts[chunk.turn_id] = part_counts.get(chunk.turn_id, 0) + 1
         if logical and logical[-1].turn_id == chunk.turn_id:
@@ -52,7 +52,7 @@ def main() -> None:
             subtitles.write(f"{index}\n{srt_ts(start)} --> {srt_ts(start + window)}\n[{turn.speaker}] {turn.text}\n\n")
 
     rows = []
-    speaker_colors: dict[str, str] = {}
+    speaker_colors = {}
     for index, turn in enumerate(logical):
         start, window = placement_by_turn[turn.turn_id]
         if turn.speaker not in speaker_colors:

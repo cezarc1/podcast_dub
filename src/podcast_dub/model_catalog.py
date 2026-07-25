@@ -54,6 +54,5 @@ def validate_model_snapshot(snapshot_path: str | Path) -> None:
             config = json.loads(config_path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise RuntimeError(f"invalid model config {config_path}: {exc}") from exc
-        field = _unsafe_field(config)
-        if field is not None:
+        if (field := _unsafe_field(config)) is not None:
             raise RuntimeError(f"unsafe model config field {field!r} in {config_path}")

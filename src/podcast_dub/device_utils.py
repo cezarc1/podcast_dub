@@ -15,8 +15,7 @@ PACKAGE_PARENT = Path(__file__).resolve().parent.parent
 
 def helper_python(env_var: str, environment_dir: str) -> str:
     """Resolve a helper interpreter from an override or the current project."""
-    configured = os.environ.get(env_var)
-    if configured:
+    if configured := os.environ.get(env_var):
         return os.path.abspath(os.path.expanduser(configured))
     return str(Path.cwd() / environment_dir / "bin" / "python")
 
@@ -24,9 +23,8 @@ def helper_python(env_var: str, environment_dir: str) -> str:
 def helper_process_env() -> dict[str, str]:
     """Make this installed/source package importable in a helper interpreter."""
     env = dict(os.environ)
-    existing = env.get("PYTHONPATH")
     entries = [str(PACKAGE_PARENT)]
-    if existing:
+    if existing := env.get("PYTHONPATH"):
         entries.append(existing)
     env["PYTHONPATH"] = os.pathsep.join(entries)
     return env

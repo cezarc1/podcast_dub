@@ -19,8 +19,8 @@ def test_translate_stage_translates_each_phrase_with_source_only_context(monkeyp
         parameters_digest=stable_digest({}),
     )
     write_artifact_atomic(tmp_path / "phrases_spk.json", SPEAKER_PHRASES, source_provenance, phrases)
-    translate_calls: list[dict[str, object]] = []
-    calls: dict[str, object] = {"translations": translate_calls}
+    translate_calls = []
+    calls = {"translations": translate_calls}
 
     def fake_factory(
         api_key,

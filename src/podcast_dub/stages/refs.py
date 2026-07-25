@@ -60,7 +60,7 @@ def _select_reference_segments(
             continue
         candidates.append((duration, segment))
     candidates.sort(key=lambda item: -item[0])
-    selected: list[DiarizationSegment] = []
+    selected = []
     total = 0.0
     for duration, segment in candidates:
         selected.append(segment)
@@ -73,7 +73,7 @@ def _select_reference_segments(
 def _join_with_silence(parts: Sequence[np.ndarray], silence: np.ndarray) -> np.ndarray:
     if len(parts) == 1:
         return parts[0]
-    pieces: list[np.ndarray] = [parts[0]]
+    pieces = [parts[0]]
     for part in parts[1:]:
         pieces.append(silence)
         pieces.append(part)
@@ -121,8 +121,7 @@ def run_refs(cfg: JobConfig) -> str:
         },
         model=ModelIdentity(identifier=TTS_ID, revision=TTS_REVISION),
     )
-    cached = load_cached_artifact(metadata_path, SPEAKER_REFERENCES, provenance)
-    if cached is not None and all(
+    if (cached := load_cached_artifact(metadata_path, SPEAKER_REFERENCES, provenance)) is not None and all(
         os.path.exists(reference.audio_file) and file_digest(reference.audio_file) == reference.audio_sha256
         for reference in cached
     ):
@@ -133,7 +132,7 @@ def run_refs(cfg: JobConfig) -> str:
     mapped = speaker_mapping(raw, cfg.speaker_names)
     audio_path = cfg.resolved_audio()
     phrases = read_artifact(phrases_path, SPEAKER_PHRASES).payload if os.path.exists(phrases_path) else ()
-    references: list[SpeakerReference] = []
+    references = []
     progress = tqdm(mapped.assignment.mapping.items(), desc="refs", unit="speaker")
     for raw_spk, disp in progress:
         wav_out = os.path.join(refs_dir, f"ref_{disp}.wav")

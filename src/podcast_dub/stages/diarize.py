@@ -161,7 +161,7 @@ def _run_sortformer(request: DiarizationBackendRequest) -> tuple[DiarizationSegm
     m.sortformer_modules.chunk_len = 340
     m = m.to(request.plan.device)
     segs = m.diarize(audio=[request.audio_file], batch_size=1)
-    out: list[DiarizationSegment] = []
+    out = []
     for s in segs[0]:  # lines of "start end speaker_N"
         a, b, spk = s.split()
         out.append(DiarizationSegment(start=float(a), end=float(b), speaker=spk))
@@ -171,7 +171,7 @@ def _run_sortformer(request: DiarizationBackendRequest) -> tuple[DiarizationSegm
 
 def merge_segments(raw_segs: Sequence[DiarizationSegment]) -> tuple[DiarizationSegment, ...]:
     segs = sorted(raw_segs, key=lambda segment: (segment.start, segment.end))
-    merged: list[DiarizationSegment] = []
+    merged = []
     for s in segs:
         if merged and merged[-1].speaker == s.speaker and s.start - merged[-1].end < MERGE_GAP_S:
             merged[-1] = merged[-1].validated_copy(end=max(merged[-1].end, s.end))
@@ -207,7 +207,7 @@ def speaker_mapping(
     name (only kept speakers), totals raw speaker -> speech seconds.
     """
     merged = merge_segments(raw_segs)
-    totals: defaultdict[str, float] = defaultdict(float)
+    totals = defaultdict(float)
     for s in merged:
         totals[s.speaker] += s.end - s.start
     total_all = sum(totals.values()) or 1.0
@@ -237,10 +237,10 @@ def label_phrases(
     mapping = mapped.assignment.mapping
     labeled = tuple((s.start, s.end, mapping[s.speaker]) for s in mapped.segments if s.speaker in mapping)
     dominant = next(iter(mapping.values()), "spk_0")
-    out: list[SpeakerPhrase] = []
-    for p in phrases:
-        out.extend(_split_and_label(p, labeled, dominant))
-    return PhraseLabelingResult(merge_orphans(out), mapped.assignment)
+    labeled_phrases = []
+    for phrase in phrases:
+        labeled_phrases.extend(_split_and_label(phrase, labeled, dominant))
+    return PhraseLabelingResult(merge_orphans(labeled_phrases), mapped.assignment)
 
 
 def merge_orphans(items: Sequence[SpeakerPhrase]) -> tuple[SpeakerPhrase, ...]:
@@ -253,7 +253,7 @@ def merge_orphans(items: Sequence[SpeakerPhrase]) -> tuple[SpeakerPhrase, ...]:
     isolated fragments between speakers are real backchannels and stay.
     """
     out = list(items)
-    merged: list[SpeakerPhrase] = []
+    merged = []
     i = 0
     while i < len(out):
         p = out[i]
@@ -297,7 +297,7 @@ def _split_and_label(
     dominant: str,
 ) -> tuple[SpeakerPhrase, ...]:
     words = p.words
-    cuts: list[float] = []
+    cuts = []
     for (a0, b0, spk0), (a1, b1, spk1) in itertools.pairwise(labeled):
         if spk0 == spk1:
             continue
@@ -320,12 +320,12 @@ def _split_and_label(
 
     cuts.sort()
     # bucket index = number of cuts below the word's midpoint
-    buckets: dict[int, list] = {}
+    buckets = {}
     for w in words:
         mid = (w.start + w.end) / 2
         k = bisect.bisect_left(cuts, mid)
         buckets.setdefault(k, []).append(w)
-    pieces: list[SpeakerPhrase] = []
+    pieces = []
     for k in sorted(buckets):
         ws = buckets[k]
         start = round(ws[0].start, 3)

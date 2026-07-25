@@ -49,7 +49,7 @@ def silence_intervals(
         return []
     rms = np.sqrt((audio[: n * frame].reshape(n, frame) ** 2).mean(axis=1))
     sil = rms < thr
-    out: list[SampleInterval] = []
+    out = []
     i = 0
     while i < n:
         if sil[i]:
@@ -148,7 +148,7 @@ def atempo(audio: np.ndarray, r: float) -> np.ndarray:
 
 def fit_audio(audio: np.ndarray, window_s: float, tempo_up: float = TEMPO_UP) -> AudioFitResult:
     """Fit generated audio to window_s seconds and return the applied transformations."""
-    report: list[str] = []
+    report = []
     d = len(audio) / SR
     if d > window_s * LONG_OK:
         audio, saved = pause_compress(audio)
