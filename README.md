@@ -33,8 +33,9 @@ The complete pipeline runs and writes:
 | `./interview_dubwork/dub_voice.wav` | synthesized voices only |
 | `./interview_dubwork/` | resumable stage artifacts, logs, and subtitles |
 
-The first run downloads the model weights and can take a while. The input must
-be a local media file that FFmpeg can decode.
+The first run downloads the model weights and can take a while. Local inputs
+must be media files that FFmpeg can decode. HTTP(S) video URLs are also
+accepted and downloaded into the workdir with `yt-dlp`.
 
 ## Use a job file
 
@@ -57,7 +58,11 @@ Then run:
 uv run podcast_dub --config dub.toml
 ```
 
-See [dub.toml.example](dub.toml.example) for the configuration template.
+See [dub.toml.example](dub.toml.example) for the configuration template. The
+demo above has ready-to-run configs for a
+[five-minute development run](jobs/ref_kimi_5min.toml) and the
+[full showcase](jobs/ref_kimi_full.toml).
+
 Rerunning the same job reuses matching stage artifacts. If the source file's
 contents change without its filename changing, choose a fresh `--workdir` so
 the extracted source audio cannot be reused. Version 0.1 does not yet include

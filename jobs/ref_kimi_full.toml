@@ -1,0 +1,8 @@
+video = "https://www.youtube.com/watch?v=91fmhAnECVc"
+source_lang = "zh"
+target_lang = "en"
+output = "./kimi_k2_full_en.mp4"
+context = "An interview with Yang Zhilin (杨植麟), founder of Moonshot AI (月之暗面), about Kimi K2, agentic LLMs, and AI research."
+proper_nouns = ["Kimi", "Kimi K2", "Moonshot AI", "Yang Zhilin", "Zhang Xiaojun"]
+speaker_names = ["yang", "zhang"]
+workdir = "./kimi_k2_full_dubwork"
