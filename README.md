@@ -16,6 +16,16 @@ Dubs a video podcast into another language using all open-weight models:
 | [Watch original](https://www.youtube.com/watch?v=91fmhAnECVc) | [Watch English dub](https://www.youtube.com/watch?v=92BQg2oozBg) |
 
 ## Dub a local video
+Note: You need [Git](https://git-scm.com/install/), [uv](https://docs.astral.sh/uv/getting-started/installation/),
+and [FFmpeg](https://ffmpeg.org/download.html) pre-installed.
+
+```bash
+git clone https://github.com/cezarc1/podcast_dub.git
+cd podcast_dub
+uv sync --locked --python 3.12
+```
+
+Then, from the repository root:
 
 ```bash
 uv run podcast_dub "./interview.mp4" --from zh --to en
@@ -23,6 +33,11 @@ uv run podcast_dub "./interview.mp4" --from zh --to en
 
 Translation defaults to Kimi K3 through Moonshot's OpenAI-compatible API.
 `DUB_TRANSLATE_API_KEY` must already be set to the corresponding API key.
+
+Run the command from the repository root: the ASR and diarization stages look
+for their helper environments at `./.venv-asr` and `./.venv-nemo`, relative to
+the current directory. Set `DUB_ASR_PYTHON` and `DUB_NEMO_PYTHON` to run from
+elsewhere.
 
 The complete pipeline runs and writes:
 
