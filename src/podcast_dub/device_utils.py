@@ -87,7 +87,28 @@ def resolve_device_plan(
     return DevicePlan(stage=stage, device=device, dtype=dtype, attention=attention)
 
 
+def _serialize_mps_weight_loading(plan: DevicePlan) -> None:
+    """Load weights on a single thread when targeting MPS.
+
+    Transformers 5.x materializes checkpoint tensors from a thread pool. Each
+    worker calls ``tensor.to(device, dtype)``, and on MPS those casts contend
+    inside PyTorch's Metal shader cache: the load livelocks rather than merely
+    running slowly, with several threads spinning indefinitely. Loading is not
+    I/O-bound at this model size, so serializing costs nothing measurable.
+    """
+    if plan.device != ConcreteDevice.MPS:
+        return
+    try:
+        from transformers import core_model_loading
+    except ImportError:  # transformers < 5 has no parallel loader
+        return
+    if core_model_loading.GLOBAL_WORKERS != 1:
+        core_model_loading.GLOBAL_WORKERS = 1
+        logger.info("device: serialized weight loading (MPS + Metal shader cache contention)")
+
+
 def model_kwargs_for(plan: DevicePlan) -> dict[str, Any]:
+    _serialize_mps_weight_loading(plan)
     dtype = torch.bfloat16 if plan.dtype == "bfloat16" else torch.float32
     return {
         "device_map": plan.device,

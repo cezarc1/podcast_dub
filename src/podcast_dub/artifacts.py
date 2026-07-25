@@ -1,5 +1,3 @@
-"""Versioned, provenance-aware JSON artifact I/O."""
-
 from __future__ import annotations
 
 import hashlib

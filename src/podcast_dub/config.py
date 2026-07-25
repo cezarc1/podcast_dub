@@ -1,5 +1,3 @@
-"""Strict job configuration loaded from TOML and CLI overrides."""
-
 from __future__ import annotations
 
 import logging

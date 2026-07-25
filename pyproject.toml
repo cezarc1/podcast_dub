@@ -27,16 +27,21 @@ dependencies = [
     # qwen-tts and nemo leave this transitive floor open; older numba releases
     # cannot build on the Python 3.12 required by this project.
     "numba>=0.61",
-    "qwen-tts",
-    # TTS path: qwen-tts is incompatible with transformers 5.x (pin 4.x)
-    "transformers==4.57.3",
+    # Fork of qwen-tts carrying the Transformers 5.x port; upstream hard-pins
+    # transformers==4.57.3, which cannot coexist with Qwen3-ASR.
+    "qwen-tts-compat>=0.1.1.post1",
+    "transformers>=5.9,<6",
     "accelerate",
-    # Diarization: NeMo asks for transformers~=4.57.0, which already admits
-    # qwen-tts's ==4.57.3, so Sortformer shares this environment. diarize.py
-    # then takes its inline path; the DUB_NEMO_PYTHON helper stays as a fallback.
-    "nemo_toolkit[asr]",
-    # ASR path NOTE: Qwen3-ASR-1.7B + ForcedAligner need transformers>=5.x
-    # -> run those stages in a separate venv (.venv-asr) with transformers==5.14.1
+    "librosa",
+    # Diarization. NeMo declares transformers~=4.57.0, but that pin is
+    # conservative rather than load-bearing for the Sortformer path used here:
+    # diarizing the same audio under 4.57.3 and 5.14.1 produces byte-identical
+    # segments. See [tool.uv] override-dependencies below.
+    #
+    # The floor matters: nemo_toolkit 2.3.0 asks only for transformers>=4.51 with
+    # no ceiling, so without it a resolver lacking the override silently picks
+    # that year-old release instead of reporting a conflict.
+    "nemo_toolkit[asr]>=2.7",
     "dspy>=3.3.0b1",
     "openai>=2.48.0",
     "pydantic>=2.11,<3",
@@ -73,6 +78,8 @@ dev = [
 # Per https://docs.astral.sh/uv/guides/integration/pytorch/ (project-interface pattern;
 # `uv pip install --torch-backend=auto` is the uv-pip-interface equivalent).
 [tool.uv.sources]
+# TODO: switch to the published package once qwen-tts-compat is on PyPI.
+qwen-tts-compat = { path = "../qwen-tts-compat" }
 torch = [
     { index = "pytorch-cu130", marker = "sys_platform == 'linux'" },
 ]
@@ -84,6 +91,11 @@ torchvision = [
 # flash-attn's build imports the runtime torch; otherwise its isolated build
 # environment cannot discover the selected CUDA/PyTorch combination.
 no-build-isolation-package = ["flash-attn"]
+# NeMo declares transformers~=4.57.0. Sortformer diarization is verified
+# byte-identical on 5.14.1, and ASR/TTS both require 5.x, so override the pin to
+# keep every stage in one environment. Note this is a uv-only mechanism: pip has
+# no equivalent, so a pip install cannot reproduce this environment.
+override-dependencies = ["transformers>=5.9,<6"]
 
 [[tool.uv.index]]
 name = "pytorch-cu130"

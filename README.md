@@ -37,11 +37,6 @@ uv run podcast_dub "./interview.mp4" --from zh --to en
 Translation defaults to Kimi K3 through Moonshot's OpenAI-compatible API.
 `DUB_TRANSLATE_API_KEY` must already be set to the corresponding API key.
 
-Run the command from the repository root: the ASR and diarization stages look
-for their helper environments at `./.venv-asr` and `./.venv-nemo`, relative to
-the current directory. Set `DUB_ASR_PYTHON` and `DUB_NEMO_PYTHON` to run from
-elsewhere.
-
 The complete pipeline runs and writes:
 
 | Path | Contents |
@@ -85,7 +80,7 @@ Rerunning the same job reuses matching stage artifacts. If the source file's
 contents change without its filename changing, choose a fresh `--workdir` so
 the extracted source audio cannot be reused. Version 0.1 does not yet include
 the ASR/NeMo helper dependency locks in artifact provenance, so also use a
-fresh workdir after changing either helper environment.
+fresh workdir after changing the installed model or inference dependencies.
 
 ## Configure translation
 
@@ -139,32 +134,23 @@ Linux currently resolves the project's pinned CUDA 13.0 PyTorch wheels.
 `--extra cuda` additionally installs FlashAttention for the main TTS
 environment; it is not GPU auto-detection.
 
-### ASR helper
+### One environment
 
-Diarization runs in the main environment: NeMo asks for `transformers~=4.57.0`,
-which already admits the `4.57.3` that Qwen3-TTS pins, so `uv sync` installs
-both together.
+Every stage runs in the single environment `uv sync` creates. There are no
+helper environments to build and nothing to configure after the sync.
 
-ASR is the one stage that cannot share it — Qwen3-ASR needs Transformers 5.x
-while Qwen3-TTS pins 4.x. Create that single helper environment once:
+ASR, TTS and diarization all run on Transformers 5.x. That needs two things:
+`qwen-tts-compat`, a fork of `qwen-tts` carrying the Transformers 5.x port
+(upstream hard-pins 4.57.3), and a
+`[tool.uv] override-dependencies` entry, because NeMo declares
+`transformers~=4.57.0`. That pin is conservative rather than load-bearing here:
+diarizing the same audio under 4.57.3 and 5.14.1 yields byte-identical segments.
 
-```bash
-uv venv --python 3.12 .venv-asr
-uv pip install --python .venv-asr/bin/python --torch-backend=auto \
-    'transformers==5.14.1' torch torchaudio accelerate librosa soundfile 'pydantic>=2.10,<3'
+The override is a **uv-only** mechanism — pip has no equivalent, so install with
+`uv sync`, not `pip install`.
 
-# Linux/NVIDIA only: the CUDA plan also uses FlashAttention in the ASR helper
-uv pip install --python .venv-asr/bin/python --no-build-isolation 'flash-attn>=2.7.4'
-
-export DUB_TRANSLATE_API_KEY="<translation-api-key>"
-```
-
-The default helper path is `.venv-asr/bin/python`; set `DUB_ASR_PYTHON` only
-when using a different location. If no compatible FlashAttention wheel exists
-for the CUDA ASR environment, building it requires a matching CUDA toolkit.
-
-`DUB_NEMO_PYTHON` still works if you prefer to keep diarization in its own
-environment: point it at that interpreter and the stage runs there instead.
+`DUB_ASR_PYTHON` and `DUB_NEMO_PYTHON` still work if you would rather run either
+stage in its own interpreter; point them at it and that stage runs there.
 
 ## Pipeline
 
@@ -174,8 +160,8 @@ translation → TTS → placement + mix → mp4`
 | Stage | What runs | Notes |
 |---|---|---|
 | probe | ffmpeg | extracts mono 16 kHz audio |
-| asr | Qwen3-ASR-1.7B + Qwen3-ForcedAligner | caption-free phrase + word timings (runs in `.venv-asr`, transformers 5.x) |
-| diarize | NVIDIA Sortformer (NeMo, in `.venv-nemo`) | up to four speakers; splits phrases at sustained speaker handoffs to reduce cross-speaker TTS |
+| asr | Qwen3-ASR-1.7B + Qwen3-ForcedAligner | caption-free phrase + word timings |
+| diarize | NVIDIA Sortformer (NeMo) | up to four speakers; splits phrases at sustained speaker handoffs to reduce cross-speaker TTS |
 | refs | auto-mined from diarization | ~60 s clean solo audio per speaker, full timeline |
 | translate | DSPy + kimi-k3 (Moonshot default) | repairs spoken-ASR noise, uses preceding source conversation turns, emits TTS-ready speech, and logs every batch to `<workdir>/translations.jsonl` |
 | tts | Qwen3-TTS-12Hz-1.7B (local) | stage-specific CUDA/MPS/CPU selection, x_vector-only voice cloning, measurement-verified DSPy.Refine rewrite loop |

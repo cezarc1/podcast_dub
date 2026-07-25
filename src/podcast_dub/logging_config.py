@@ -1,5 +1,3 @@
-"""Shared logging setup for package entry points."""
-
 from __future__ import annotations
 
 import logging

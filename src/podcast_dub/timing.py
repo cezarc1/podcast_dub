@@ -1,5 +1,3 @@
-"""Authoritative timing evaluation shared by TTS and placement."""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence

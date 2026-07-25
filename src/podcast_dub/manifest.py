@@ -1,5 +1,3 @@
-"""Atomically persisted, typed translation and rewrite event manifest."""
-
 from __future__ import annotations
 
 import json

@@ -5,9 +5,10 @@ Input: job audio (16kHz wav from probe). Chunks it, transcribes with
 Qwen3-ASR, force-aligns words to the audio, groups words into speech-natural
 phrases. Output: <workdir>/phrases.json [{start, end, text}].
 
-Environment note: Qwen3-ASR needs transformers>=5.x while Qwen3-TTS needs 4.x.
-If this module runs under transformers<5, it re-executes itself with the ASR
-venv interpreter (DUB_ASR_PYTHON env var, default <project>/.venv-asr/bin/python).
+Environment note: Qwen3-ASR needs transformers>=5.x, which the project now
+installs, so this stage normally runs in-process. If it finds itself under
+transformers<5 it re-executes with a helper interpreter instead
+(DUB_ASR_PYTHON, default <project>/.venv-asr/bin/python).
 """
 
 import itertools
@@ -23,7 +24,7 @@ from tqdm import tqdm
 from podcast_dub.artifacts import build_provenance, load_cached_artifact, write_artifact_atomic
 from podcast_dub.audio_utils import dur_of
 from podcast_dub.config import JobConfig
-from podcast_dub.device_utils import helper_process_env, helper_python, resolve_device_plan
+from podcast_dub.device_utils import helper_process_env, helper_python, model_kwargs_for, resolve_device_plan
 from podcast_dub.model_catalog import (
     ALIGNER_ID,
     ALIGNER_REVISION,
@@ -185,7 +186,7 @@ def _run_asr_inline(request: AsrBackendRequest) -> AsrBackendResult:
     import torch
     from huggingface_hub import snapshot_download
     from transformers import (
-        AutoModelForMultimodalLM,  # ty: ignore[unresolved-import]  # transformers>=5 only (ASR venv)
+        AutoModelForMultimodalLM,  # transformers>=5 only
         AutoModelForTokenClassification,
         AutoProcessor,
     )
@@ -201,12 +202,7 @@ def _run_asr_inline(request: AsrBackendRequest) -> AsrBackendResult:
     validate_model_snapshot(asr_path)
     validate_model_snapshot(aligner_path)
     asr_p = AutoProcessor.from_pretrained(asr_path)
-    asr_m = AutoModelForMultimodalLM.from_pretrained(
-        asr_path,
-        device_map=request.plan.device,
-        dtype=dtype,
-        attn_implementation=request.plan.attention,
-    )
+    asr_m = AutoModelForMultimodalLM.from_pretrained(asr_path, **model_kwargs_for(request.plan))
     al_p = AutoProcessor.from_pretrained(aligner_path)
     al_m = AutoModelForTokenClassification.from_pretrained(
         aligner_path,

@@ -1,5 +1,3 @@
-"""Artifact specifications for each persisted pipeline record family."""
-
 from podcast_dub.artifacts import ArtifactSpec
 from podcast_dub.types import (
     DiarizationSegment,

@@ -40,10 +40,12 @@ TRANSLATION_CACHE_VERSION = 4
 
 logger = logging.getLogger(__name__)
 
+
 class _TranslationWork(NamedTuple):
     batch_index: int
     indexes: tuple[int, ...]
     batch_path: Path
+
 
 def _read_batch(path: Path) -> TranslationBatch:
     try:
