@@ -130,15 +130,15 @@ def run_refs(cfg: JobConfig) -> str:
         return refs_dir
 
     raw = read_artifact(segments_path, DIARIZATION_SEGMENTS).payload
-    merged, mapping, _ = speaker_mapping(raw, cfg.speaker_names)
+    mapped = speaker_mapping(raw, cfg.speaker_names)
     audio_path = cfg.resolved_audio()
     phrases = read_artifact(phrases_path, SPEAKER_PHRASES).payload if os.path.exists(phrases_path) else ()
     references: list[SpeakerReference] = []
-    progress = tqdm(mapping.items(), desc="refs", unit="speaker")
+    progress = tqdm(mapped.assignment.mapping.items(), desc="refs", unit="speaker")
     for raw_spk, disp in progress:
         wav_out = os.path.join(refs_dir, f"ref_{disp}.wav")
         txt_out = os.path.join(refs_dir, f"ref_{disp}.txt")
-        picks, total = _select_reference_segments(merged, raw_spk)
+        picks, total = _select_reference_segments(mapped.segments, raw_spk)
         if total < MIN_TOTAL_S:
             raise RuntimeError(
                 f"refs: only {total:.0f}s clean audio for {disp}; at least {MIN_TOTAL_S:.0f}s is required"

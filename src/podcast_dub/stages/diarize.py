@@ -21,6 +21,7 @@ import subprocess
 from collections import defaultdict
 from collections.abc import Sequence
 from pathlib import Path
+from typing import NamedTuple
 
 from podcast_dub.artifacts import build_provenance, load_cached_artifact, read_artifact, write_artifact_atomic
 from podcast_dub.config import JobConfig
@@ -86,10 +87,14 @@ def run_diarize(cfg: JobConfig) -> str:
         raw = _produce_segments(DiarizationBackendRequest(audio_file=cfg.resolved_audio(), plan=plan), workdir)
         write_artifact_atomic(segs_path, DIARIZATION_SEGMENTS, segment_provenance, raw)
     phrase_provenance = _phrase_provenance({"phrases": phrases_path, "segments": segs_path})
-    phrases, mapping, totals = label_phrases(phrases, raw, cfg.speaker_names)
-    pretty = {mapping[s]: round(t) for s, t in totals.items() if s in mapping}
-    logger.info(f"diarize: speakers {pretty}s -> {mapping}")
-    write_artifact_atomic(out, SPEAKER_PHRASES, phrase_provenance, phrases)
+    result = label_phrases(phrases, raw, cfg.speaker_names)
+    pretty = {
+        result.assignment.mapping[s]: round(t)
+        for s, t in result.assignment.totals.items()
+        if s in result.assignment.mapping
+    }
+    logger.info(f"diarize: speakers {pretty}s -> {result.assignment.mapping}")
+    write_artifact_atomic(out, SPEAKER_PHRASES, phrase_provenance, result.phrases)
     logger.info(f"diarize: wrote {out}")
     return out
 
@@ -175,15 +180,31 @@ def merge_segments(raw_segs: Sequence[DiarizationSegment]) -> tuple[DiarizationS
     return tuple(merged)
 
 
+class SpeakerAssignment(NamedTuple):
+    """Raw diarization speaker -> display name, plus speech-time totals."""
+
+    mapping: dict[str, str]
+    totals: dict[str, float]
+
+
+class SpeakerMappingResult(NamedTuple):
+    segments: tuple[DiarizationSegment, ...]
+    assignment: SpeakerAssignment
+
+
+class PhraseLabelingResult(NamedTuple):
+    phrases: tuple[SpeakerPhrase, ...]
+    assignment: SpeakerAssignment
+
+
 def speaker_mapping(
     raw_segs: Sequence[DiarizationSegment],
     names: Sequence[str],
-) -> tuple[tuple[DiarizationSegment, ...], dict[str, str], dict[str, float]]:
+) -> SpeakerMappingResult:
     """Merge segments, drop noise speakers, order survivors by speaking time.
 
-    Returns (merged, mapping, totals): merged segment list, mapping raw
-    speaker -> display name (only kept speakers), totals raw speaker -> kept
-    speech seconds.
+    Returns merged segments plus assignment: mapping raw speaker -> display
+    name (only kept speakers), totals raw speaker -> speech seconds.
     """
     merged = merge_segments(raw_segs)
     totals: defaultdict[str, float] = defaultdict(float)
@@ -195,14 +216,14 @@ def speaker_mapping(
     # equal-duration speakers differently from run to run (hash randomization)
     order = sorted(kept, key=lambda spk: (-totals[spk], spk))
     mapping = {spk: (names[r] if r < len(names) else f"spk_{r}") for r, spk in enumerate(order)}
-    return merged, mapping, dict(totals)
+    return SpeakerMappingResult(merged, SpeakerAssignment(mapping, dict(totals)))
 
 
 def label_phrases(
     phrases: Sequence[Phrase],
     raw_segs: Sequence[DiarizationSegment],
     names: Sequence[str],
-) -> tuple[tuple[SpeakerPhrase, ...], dict[str, str], dict[str, float]]:
+) -> PhraseLabelingResult:
     """Split phrases at real speaker handoffs, label by max overlap.
 
     Cross-speaker phrases make TTS use the wrong voice, so phrases with word
@@ -210,16 +231,16 @@ def label_phrases(
     side holds < MIN_SPLIT_S inside the phrase are treated as diarization blips
     and ignored.
 
-    Returns (phrases, mapping, totals): mapping raw speaker -> display name,
-    totals raw speaker -> kept speech seconds.
+    Returns labeled phrases plus assignment (mapping / totals from speaker_mapping).
     """
-    merged, mapping, totals = speaker_mapping(raw_segs, names)
-    labeled = tuple((s.start, s.end, mapping[s.speaker]) for s in merged if s.speaker in mapping)
+    mapped = speaker_mapping(raw_segs, names)
+    mapping = mapped.assignment.mapping
+    labeled = tuple((s.start, s.end, mapping[s.speaker]) for s in mapped.segments if s.speaker in mapping)
     dominant = next(iter(mapping.values()), "spk_0")
     out: list[SpeakerPhrase] = []
     for p in phrases:
         out.extend(_split_and_label(p, labeled, dominant))
-    return merge_orphans(out), mapping, totals
+    return PhraseLabelingResult(merge_orphans(out), mapped.assignment)
 
 
 def merge_orphans(items: Sequence[SpeakerPhrase]) -> tuple[SpeakerPhrase, ...]:

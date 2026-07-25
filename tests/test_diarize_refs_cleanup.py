@@ -56,13 +56,13 @@ def test_equal_duration_speakers_map_deterministically() -> None:
         DiarizationSegment(start=10.5, end=20.5, speaker="speaker_0"),
     ]
 
-    _, mapping, totals = speaker_mapping(segments, ["host", "guest"])
+    result = speaker_mapping(segments, ["host", "guest"])
 
-    assert totals["speaker_0"] == totals["speaker_1"]
-    assert mapping == {"speaker_0": "host", "speaker_1": "guest"}
+    assert result.assignment.totals["speaker_0"] == result.assignment.totals["speaker_1"]
+    assert result.assignment.mapping == {"speaker_0": "host", "speaker_1": "guest"}
     # input order must not move the tie either
-    _, reversed_mapping, _ = speaker_mapping(list(reversed(segments)), ["host", "guest"])
-    assert reversed_mapping == mapping
+    reversed_result = speaker_mapping(list(reversed(segments)), ["host", "guest"])
+    assert reversed_result.assignment.mapping == result.assignment.mapping
 
 
 def test_speaker_mapping_totals_do_not_autovivify_absent_speakers() -> None:
@@ -70,7 +70,7 @@ def test_speaker_mapping_totals_do_not_autovivify_absent_speakers() -> None:
     # a caller probing an unknown speaker should get KeyError, not a silent 0.0.
     segments = [DiarizationSegment(start=0.0, end=4.0, speaker="speaker_0")]
 
-    _, _, totals = speaker_mapping(segments, ["host"])
+    totals = speaker_mapping(segments, ["host"]).assignment.totals
 
     assert totals == {"speaker_0": 4.0}
     with pytest.raises(KeyError):

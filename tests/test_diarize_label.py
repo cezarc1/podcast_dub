@@ -31,9 +31,9 @@ SEGS = [seg(0, 10, "speaker_0"), seg(10.1, 20, "speaker_1")]
 class TestLabelPhrases:
     def test_simple_overlap_labeling(self):
         phr = [phrase(1, 3, "ab"), phrase(12, 14, "cd")]
-        out, mapping, _ = label_phrases(phr, SEGS, ["host", "guest"])
-        assert [p.speaker for p in out] == ["host", "guest"]
-        assert mapping == {"speaker_0": "host", "speaker_1": "guest"}
+        result = label_phrases(phr, SEGS, ["host", "guest"])
+        assert [p.speaker for p in result.phrases] == ["host", "guest"]
+        assert result.assignment.mapping == {"speaker_0": "host", "speaker_1": "guest"}
 
     def test_split_at_real_handoff(self):
         # words 0-5s host, 5-9s guest; handoff segment boundary at 5.0/5.1
@@ -41,7 +41,7 @@ class TestLabelPhrases:
         segs = [seg(0, 5.0, "speaker_0"), seg(5.1, 9.0, "speaker_1")]
         words = [word("你", 1.0, 1.4), word("好", 1.5, 1.9), word("大", 5.3, 5.7), word("家", 5.8, 6.2)]
         phr = [phrase(1.0, 6.2, "你好大家", words)]
-        out, _, _ = label_phrases(phr, segs, ["host", "guest"])
+        out = label_phrases(phr, segs, ["host", "guest"]).phrases
         assert len(out) == 2
         assert out[0].speaker == "host" and out[0].text == "你好"
         assert out[1].speaker == "guest" and out[1].text == "大家"
@@ -60,7 +60,7 @@ class TestLabelPhrases:
         # keep speaker_1 above the noise floor: 10s of 30s total
         words = [word("a", 1.0, 1.4), word("b", 2.0, 2.4), word("c", 4.0, 4.4), word("d", 5.0, 5.4)]
         phr = [phrase(1.0, 5.4, "abcd", words)]
-        out, _, _ = label_phrases(phr, segs, ["host", "guest"])
+        out = label_phrases(phr, segs, ["host", "guest"]).phrases
         assert len(out) == 1
         assert out[0].speaker == "host"
         assert out[0].text == "abcd"
@@ -69,18 +69,18 @@ class TestLabelPhrases:
         # speaker_2 has 0.05s of 20s total (< 1%) -> dropped
         segs = [seg(0, 10, "speaker_0"), seg(10, 10.05, "speaker_2"), seg(10.05, 20, "speaker_1")]
         phr = [phrase(9.9, 10.2, "x")]
-        out, mapping, _ = label_phrases(phr, segs, [])
-        assert "speaker_2" not in mapping
+        result = label_phrases(phr, segs, [])
+        assert "speaker_2" not in result.assignment.mapping
         # the 9.9-10.2s phrase overlaps spk_0 by 0.10s and spk_1 by 0.15s,
         # so max-overlap labelling must pick spk_1
-        assert out[0].speaker == "spk_1"
+        assert result.phrases[0].speaker == "spk_1"
 
     def test_no_words_fallback_no_split(self):
         # spanning a real handoff but no word timings -> whole-phrase label
         # (speaker_0 longer -> "host"; phrase overlaps host 4.0s, guest 2.9s)
         segs = [seg(0, 5.0, "speaker_0"), seg(5.1, 8.0, "speaker_1")]
         phr = [phrase(1.0, 8.0, "abcdef")]
-        out, _, _ = label_phrases(phr, segs, ["host", "guest"])
+        out = label_phrases(phr, segs, ["host", "guest"]).phrases
         assert len(out) == 1
         assert out[0].speaker == "host"
 
@@ -90,7 +90,7 @@ class TestLabelPhrases:
         # need guest >= noise floor: 4s of 20s = 20% ok
         words = [word("a", 1.0, 1.4), word("b", 5.0, 5.4), word("c", 6.0, 6.4), word("d", 9.0, 9.4)]
         phr = [phrase(1.0, 9.4, "abcd", words)]
-        out, _, _ = label_phrases(phr, segs, ["host", "guest"])
+        out = label_phrases(phr, segs, ["host", "guest"]).phrases
         assert [p.speaker for p in out] == ["host", "guest", "host"]
         assert [p.text for p in out] == ["a", "bc", "d"]
 

@@ -117,7 +117,7 @@ def run_translate(cfg: JobConfig) -> str:
 
     def work(task: tuple[int, tuple[int, ...], Path]) -> int:
         batch_index, indexes, batch_path = task
-        translations: dict[int, str] = {}
+        translations = {}
         for i in indexes:
             translated = translator(
                 previous_context=_previous_context(i),
@@ -150,15 +150,14 @@ def run_translate(cfg: JobConfig) -> str:
         for batch_index in tqdm(executor.map(work, todo), total=len(todo), desc="translate", unit="batch"):
             logger.info("translate: batch %d completed", batch_index)
 
-    merged: dict[int, str] = {}
+    merged = {}
     for path in sorted(tr_dir.glob("batch_*.json")):
         batch = _read_batch(path)
         overlap = set(merged).intersection(batch.translations)
         if overlap:
             raise RuntimeError(f"translate: duplicate cached translation ids {sorted(overlap)} in {path}")
         merged.update(batch.translations)
-    missing = [i for i in range(len(phrases)) if i not in merged]
-    if missing:
+    if missing := [i for i in range(len(phrases)) if i not in merged]:
         raise RuntimeError(f"translate: missing translations: {missing[:10]}")
 
     units = tuple(
