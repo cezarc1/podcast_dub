@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.12,<3.13"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
-authors = [{ name = "Cezar Cocu" }]
+authors = [{ name = "Cezar Cocu", email = "me@cezarcocu.com" }]
 keywords = ["asr", "dubbing", "podcast", "translation", "tts"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -78,8 +78,6 @@ dev = [
 # Per https://docs.astral.sh/uv/guides/integration/pytorch/ (project-interface pattern;
 # `uv pip install --torch-backend=auto` is the uv-pip-interface equivalent).
 [tool.uv.sources]
-# TODO: switch to the published package once qwen-tts-compat is on PyPI.
-qwen-tts-compat = { path = "../qwen-tts-compat" }
 torch = [
     { index = "pytorch-cu130", marker = "sys_platform == 'linux'" },
 ]
