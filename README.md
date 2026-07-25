@@ -1,6 +1,8 @@
 # podcast_dub
 
-Dubs a video podcast into another language using all open-weight models. Inference can be performed *mostly* locally on your machine.
+Dubs a video podcast into another language using all open-weight models.
+
+This can be realistically performed *mostly* locally on most M-series Macs w/ > 16Gb of RAM. The LLM translation stage is the only limiting factor as larger LLMs (>70B) have significantly better translation quality.
 
 * caption-free speech timing
 * automatic speaker separation (diarization)
