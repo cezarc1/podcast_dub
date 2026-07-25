@@ -1,11 +1,14 @@
 import importlib
+import logging
 import os
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import torch
 
-from podcast_dub.models import ConcreteDevice, DevicePlan, ModelStage
+from podcast_dub.types import ConcreteDevice, DevicePlan, ModelStage
+
+logger = logging.getLogger(__name__)
 
 PACKAGE_PARENT = Path(__file__).resolve().parent.parent
 
@@ -35,6 +38,7 @@ def _availability() -> tuple[bool, bool]:
         mps = bool(getattr(torch.backends, "mps", None) and torch.backends.mps.is_available())
         return cuda, mps
     except Exception:
+        logger.exception("device: hardware probe failed; assuming CPU-only")
         return False, False
 
 
@@ -76,17 +80,15 @@ def resolve_device_plan(
         try:
             importlib.import_module("flash_attn")
             attention = "flash_attention_2"
-        except Exception:
+        except Exception as exc:
+            logger.warning("device: flash-attn unavailable; using sdpa: %s", exc)
             attention = "sdpa"
     else:
         attention = "eager"
     return DevicePlan(stage=stage, device=device, dtype=dtype, attention=attention)
 
 
-def model_kwargs(
-    requested: str = "auto", *, stage: Literal[ModelStage.ASR, ModelStage.TTS] = ModelStage.TTS
-) -> dict[str, Any]:
-    plan = resolve_device_plan(stage, requested)
+def model_kwargs_for(plan: DevicePlan) -> dict[str, Any]:
     dtype = torch.bfloat16 if plan.dtype == "bfloat16" else torch.float32
     return {
         "device_map": plan.device,
@@ -96,5 +98,8 @@ def model_kwargs(
 
 
 if __name__ == "__main__":
+    from podcast_dub.logging_config import configure_logging
+
+    configure_logging()
     plan = resolve_device_plan(ModelStage.TTS, "auto")
-    print(f"device={plan.device} dtype={plan.dtype} attn={plan.attention}")
+    logger.info("device=%s dtype=%s attn=%s", plan.device, plan.dtype, plan.attention)

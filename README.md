@@ -193,7 +193,7 @@ uv run python -m podcast_dub.stages.verify <workdir>
 ## Repo layout
 
 * `src/podcast_dub/` — the installable package: `cli.py` (console entry point
-  `podcast_dub`), `models.py` (Pydantic contracts), `artifacts.py`
+  `podcast_dub`), `types.py` (Pydantic contracts), `artifacts.py`
   (versioned/provenance-aware I/O), `config.py`, `translate.py` (DSPy
   programs), and the pipeline stages in `stages/`
   (`asr`, `diarize`, `refs`, `translate`, `tts`, `place`, `verify`)

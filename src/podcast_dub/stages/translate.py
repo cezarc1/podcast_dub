@@ -5,8 +5,8 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
 from concurrent.futures import ThreadPoolExecutor
+from itertools import batched
 from pathlib import Path
 
 from tqdm import tqdm
@@ -21,15 +21,15 @@ from podcast_dub.artifacts import (
     write_artifact_atomic,
 )
 from podcast_dub.config import JobConfig, lang_name, resolve_translation_api
-from podcast_dub.models import (
+from podcast_dub.pipeline_artifacts import SPEAKER_PHRASES, TRANSLATION_UNITS
+from podcast_dub.translate import make_translator
+from podcast_dub.types import (
     ModelIdentity,
     TranslateEvent,
     TranslationBatch,
     TranslationManifestLine,
     TranslationUnit,
 )
-from podcast_dub.pipeline_artifacts import SPEAKER_PHRASES, TRANSLATION_UNITS
-from podcast_dub.translate import make_translator
 
 BATCH = 20
 WORKERS = 3
@@ -72,12 +72,12 @@ def run_translate(cfg: JobConfig) -> str:
         model=ModelIdentity(identifier=translation_api.model_name),
     )
     if load_cached_artifact(out, TRANSLATION_UNITS, provenance) is not None:
-        print(f"translate: cached {out}")
+        logger.info("translate: cached %s", out)
         return out
 
     manifest.configure(workdir)
     if not translation_api.api_key:
-        sys.exit("translate: no API key (set DUB_TRANSLATE_API_KEY)")
+        raise RuntimeError("translate: no API key (set DUB_TRANSLATE_API_KEY)")
     translator = make_translator(
         translation_api.api_key,
         source_language=lang_name(cfg.source_lang),
@@ -95,16 +95,18 @@ def run_translate(cfg: JobConfig) -> str:
     cache_key = stable_digest(provenance)[:16]
     tr_dir = Path(workdir, "translated", cache_key)
     tr_dir.mkdir(parents=True, exist_ok=True)
-    batches = [tuple(range(i, min(i + BATCH, len(phrases)))) for i in range(0, len(phrases), BATCH)]
+    batches = list(batched(range(len(phrases)), BATCH))
     cached_batches = {path.name: _read_batch(path) for path in tr_dir.glob("batch_*.json")}
     todo = [
         (batch_index, indexes, tr_dir / f"batch_{batch_index:03d}.json")
         for batch_index, indexes in enumerate(batches)
         if f"batch_{batch_index:03d}.json" not in cached_batches
     ]
-    print(
-        f"translate: {len(phrases)} phrases; {len(todo)} batches to do ({len(batches) - len(todo)} cached)",
-        flush=True,
+    logger.info(
+        "translate: %d phrases; %d batches to do (%d cached)",
+        len(phrases),
+        len(todo),
+        len(batches) - len(todo),
     )
 
     def _budget(index: int) -> int:
@@ -163,5 +165,5 @@ def run_translate(cfg: JobConfig) -> str:
         TranslationUnit.from_phrase(phrase, target_text=merged[index]) for index, phrase in enumerate(phrases)
     )
     write_artifact_atomic(out, TRANSLATION_UNITS, provenance, units)
-    print(f"translate: wrote {out} ({len(units)} units)")
+    logger.info("translate: wrote %s (%d units)", out, len(units))
     return out

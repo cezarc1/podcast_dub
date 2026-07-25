@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from podcast_dub.models import (
+from podcast_dub.types import (
     AlignedWord,
     DevicePlan,
     DiarizationSegment,

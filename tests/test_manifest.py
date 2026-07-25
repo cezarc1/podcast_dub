@@ -1,5 +1,5 @@
 from podcast_dub import manifest
-from podcast_dub.models import RewriteEvent, TranslateEvent, TranslationManifestLine
+from podcast_dub.types import RewriteEvent, TranslateEvent, TranslationManifestLine
 
 
 def test_manifest_round_trips_translation_event(tmp_path):

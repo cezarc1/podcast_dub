@@ -1,8 +1,8 @@
 import pytest
 
-from podcast_dub.models import AlignedWord, Phrase
 from podcast_dub.stages import asr
 from podcast_dub.stages.asr import _group_phrases
+from podcast_dub.types import AlignedWord, Phrase
 
 
 def test_group_phrases_returns_immutable_phrase_models() -> None:

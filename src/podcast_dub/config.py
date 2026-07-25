@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum, auto
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import AliasChoices, ConfigDict, Field, field_validator, model_validator
 
-from podcast_dub.models import ConcreteDevice, StrictModel
+from podcast_dub.types import ConcreteDevice, StrictModel
+
+logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    import argparse
 
 DEFAULT_TRANSLATE_BASE_URL = "https://api.moonshot.ai/v1"
 DEFAULT_TRANSLATE_MODEL = "kimi-k3"
@@ -82,6 +88,7 @@ def lang_name(code: str) -> str:
     try:
         return Language(code.lower()).display
     except ValueError:
+        logger.warning("config: unrecognized language code %r; using it verbatim", code)
         return code
 
 
@@ -214,7 +221,7 @@ def load_toml(path: str | os.PathLike[str]) -> JobConfigInput:
         return JobConfigInput.model_validate(tomllib.load(config_file))
 
 
-def merge_cli(cfg: JobConfigInput, args: Any) -> JobConfig:
+def merge_cli(cfg: JobConfigInput, args: argparse.Namespace) -> JobConfig:
     """Apply CLI precedence, then construct the fully validated job."""
     values = cfg.model_dump(exclude_none=True)
     if cfg.llm_key is not None:

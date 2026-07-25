@@ -9,10 +9,10 @@ Invariants hunted, not hand-picked:
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from podcast_dub.models import SimulationTurn, SubtitleCue, TranslationUnit
 from podcast_dub.stages.tts import build_turns
 from podcast_dub.timing import MIN_SILENCE_GAP_S
 from podcast_dub.tools.turn_tts_sample import group_units, simulate
+from podcast_dub.types import SimulationTurn, SubtitleCue, TranslationUnit
 
 SPEAKERS = st.sampled_from(["yang", "zhang"])
 
@@ -78,9 +78,10 @@ def test_group_units_invariants(cues):
     # single speaker per unit
     for u in units:
         assert u.speaker in ("yang", "zhang")
-    # span cap respected at creation time (a unit may not exceed 15s by > cue overlap)
+    # span cap respected at creation time: a fresh unit spans one cue, and the
+    # merge guard only extends a unit while cue.end - unit.start stays <= 15s.
     for u in units:
-        assert u.end - u.start <= 15.0 + 1e-9 or True  # see test_span_cap_strong
+        assert u.end - u.start <= 15.0 + 1e-9
     # text conservation: every cue's text appears in some unit
     joined = " ".join(u.subtitle_text for u in units)
     for c in cues:
@@ -120,14 +121,19 @@ def test_build_turns_split_invariants(turns):
         parts.sort(key=lambda part: part.part_index)
         for a, b in zip(parts, parts[1:], strict=False):
             assert abs(b.start - a.end) < 1e-9
-    # speakers never twice in a row after coalescing adjacent same-speaker gaps>2.5
+    # logical turns appear in one contiguous run each, numbered 0..n-1 in order.
+    # (Speaker alternation is NOT guaranteed: a same-speaker gap > 2.5s opens a
+    # new turn, so two consecutive turns can share a speaker.)
     logical = []
     for c in chunks:
         if logical and logical[-1].turn_id == c.turn_id:
             continue
         logical.append(c)
-    for _a, _b in zip(logical, logical[1:], strict=False):
-        pass  # alternation not guaranteed for gaps>2.5 between same speaker; documented
+    assert [c.turn_id for c in logical] == list(range(len(logical)))
+    # every chunk of a turn carries that turn's single speaker
+    for tid, parts in by_tid.items():
+        assert len({part.speaker for part in parts}) == 1
+        assert all(part.turn_id == tid for part in parts)
 
 
 # ---------- simulate ----------
@@ -139,14 +145,19 @@ def test_simulate_invariants(turns):
     turns = sorted(turns, key=lambda turn: turn.start)
     for i, t in enumerate(turns):
         turns[i] = t.validated_copy(turn_id=i, part_index=0)
-    total = turns[-1].end + 60.0
+    # turns are sorted by START, so the last turn need not hold the max end
+    total = max(turn.end for turn in turns) + 60.0
     pl = simulate(turns, total)
     assert len(pl) == len(turns)
     # first turn anchors on cue
     assert abs(pl[0][0] - turns[0].start) < 1e-9
     ends = []
     for i, (start, window) in enumerate(pl):
-        assert window > 0
+        # a window either clears the next cue by the inter-turn silence, or it
+        # collapsed onto the 0.05s floor because there was no room to do so
+        next_start = turns[i + 1].start if i + 1 < len(turns) else total
+        assert window >= 0.05
+        assert start + window + MIN_SILENCE_GAP_S <= next_start + 1e-9 or window == 0.05
         if i > 0:
             # anti-drift: never later than cue + 1.0
             assert start <= turns[i].start + 1.0 + 1e-9

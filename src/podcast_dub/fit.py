@@ -3,29 +3,45 @@
 
 Policy:
   long  (D/W > LONG_OK):  pause-compress -> atempo <= TEMPO_UP  -> evaluator requests rewrite if still long
-  short (D/W < SHORT_OK): pause-stretch  -> atempo >= TEMPO_DN -> leave gap
+  short (D/W < SHORT_OK): pause-stretch  -> leave gap (speech is never slowed)
 
 Speech rate is only changed within perceptual caps; silences absorb the rest.
 """
 
 import subprocess
+from collections.abc import Sequence
+from typing import NamedTuple
 
 import numpy as np
 
-from podcast_dub.audio_utils import atempo_filters
+from podcast_dub.audio_utils import SR, atempo_filters
 
-SR = 44100
 LONG_OK = 1.005  # fit to essentially exact window (no tolerance overrun -> no tail trims)
 SHORT_OK = 0.98
 TEMPO_UP = 1.12
-TEMPO_DN = 1.0  # NEVER slow speech: no atempo < 1.0 (rewrite fuller text instead)
 SIL_FLOOR = 0.12  # pause-compress: shorten silences to this
 SIL_CAP = 1.5  # pause-stretch: max seconds per pause
 STRETCH_MAX = 2.0  # pause-stretch: max scale factor
 STRETCH_ADD_MAX = 2.0  # pause-stretch: max total seconds added per turn
 
 
-def silence_intervals(audio, thr=0.008, min_frames=5, frame_ms=25):
+class SampleInterval(NamedTuple):
+    start_sample: int
+    end_sample: int
+
+    @property
+    def length(self) -> int:
+        return self.end_sample - self.start_sample
+
+
+class AudioFitResult(NamedTuple):
+    audio: np.ndarray
+    notes: tuple[str, ...]
+
+
+def silence_intervals(
+    audio: np.ndarray, thr: float = 0.008, min_frames: int = 5, frame_ms: int = 25
+) -> list[SampleInterval]:
     """Return list of [start_sample, end_sample) silence intervals."""
     frame = int(frame_ms / 1000 * SR)
     n = len(audio) // frame
@@ -33,14 +49,15 @@ def silence_intervals(audio, thr=0.008, min_frames=5, frame_ms=25):
         return []
     rms = np.sqrt((audio[: n * frame].reshape(n, frame) ** 2).mean(axis=1))
     sil = rms < thr
-    out, i = [], 0
+    out: list[SampleInterval] = []
+    i = 0
     while i < n:
         if sil[i]:
             j = i
             while j < n and sil[j]:
                 j += 1
             if j - i >= min_frames:
-                out.append([i * frame, j * frame])
+                out.append(SampleInterval(start_sample=i * frame, end_sample=j * frame))
             i = j
         else:
             i += 1
@@ -48,34 +65,34 @@ def silence_intervals(audio, thr=0.008, min_frames=5, frame_ms=25):
 
 
 def _rebuild(
-    audio: np.ndarray, intervals: list[tuple[int, int]], new_lens: list[float], fade: float = 0.008
+    audio: np.ndarray, intervals: Sequence[SampleInterval], new_lens: Sequence[float], fade: float = 0.008
 ) -> np.ndarray:
     parts, pos = [], 0
     f = np.linspace(0, 1, int(fade * SR), dtype=np.float32)
-    for (a, b), nl in zip(intervals, new_lens, strict=True):
-        if a > pos:
-            chunk = audio[pos:a].copy()
+    for interval, new_len in zip(intervals, new_lens, strict=True):
+        if interval.start_sample > pos:
+            chunk = audio[pos : interval.start_sample].copy()
             m = min(len(f), len(chunk) // 2)
             if m > 0:
                 chunk[:m] *= f[:m]
                 chunk[-m:] *= f[:m][::-1]
             parts.append(chunk)
-        parts.append(np.zeros(int(nl), dtype=np.float32))
-        pos = b
+        parts.append(np.zeros(int(new_len), dtype=np.float32))
+        pos = interval.end_sample
     tail = audio[pos:].copy()
     m = min(len(f), len(tail) // 2)
     if m > 0:
         tail[:m] *= f[:m]
     parts.append(tail)
-    return np.concatenate(parts) if parts else audio
+    return np.concatenate(parts)
 
 
 def pause_compress(audio: np.ndarray, floor: float = SIL_FLOOR) -> tuple[np.ndarray, float]:
     iv = silence_intervals(audio)
     if not iv:
         return audio, 0.0
-    new_lens = [min((b - a) / SR, floor) * SR for a, b in iv]
-    saved = sum((b - a) - nl for (a, b), nl in zip(iv, new_lens, strict=True)) / SR
+    new_lens = [min(interval.length / SR, floor) * SR for interval in iv]
+    saved = sum(interval.length - new_len for interval, new_len in zip(iv, new_lens, strict=True)) / SR
     return _rebuild(audio, iv, new_lens), saved
 
 
@@ -85,13 +102,13 @@ def pause_stretch(
     iv = silence_intervals(audio)
     if not iv:
         return audio, 0.0
-    total_sil = sum(b - a for a, b in iv) / SR
+    total_sil = sum(interval.length for interval in iv) / SR
     need = max(want_s - len(audio) / SR, 0.0)
     if need <= 0 or total_sil < 0.1:
         return audio, 0.0
     scale = min(1.0 + need / total_sil, max_scale)
-    new_lens = [min((b - a) * scale, cap * SR) for a, b in iv]
-    added = sum(nl - (b - a) for (a, b), nl in zip(iv, new_lens, strict=True)) / SR
+    new_lens = [min(interval.length * scale, cap * SR) for interval in iv]
+    added = sum(new_len - interval.length for interval, new_len in zip(iv, new_lens, strict=True)) / SR
     return _rebuild(audio, iv, new_lens), added
 
 
@@ -129,11 +146,9 @@ def atempo(audio: np.ndarray, r: float) -> np.ndarray:
     return np.frombuffer(p.stdout, dtype=np.float32).copy()
 
 
-def fit_audio(
-    audio: np.ndarray, window_s: float, tempo_up: float = TEMPO_UP, tempo_dn: float = TEMPO_DN
-) -> tuple[np.ndarray, list[str]]:
-    """Fit generated audio to window_s seconds. Returns (audio, report list)."""
-    report = []
+def fit_audio(audio: np.ndarray, window_s: float, tempo_up: float = TEMPO_UP) -> AudioFitResult:
+    """Fit generated audio to window_s seconds and return the applied transformations."""
+    report: list[str] = []
     d = len(audio) / SR
     if d > window_s * LONG_OK:
         audio, saved = pause_compress(audio)
@@ -148,13 +163,10 @@ def fit_audio(
         audio, added = pause_stretch(audio, min(window_s, d + STRETCH_ADD_MAX))
         if added > 0.05:
             report.append(f"pause-stretch +{added:.1f}s")
-        d = len(audio) / SR
-        if d < window_s * SHORT_OK:
-            r = max(d / window_s, tempo_dn)
-            if abs(r - 1.0) >= 0.001:
-                audio = atempo(audio, r)
-                report.append(f"slow {r:.2f}")
-    return audio, report
+        # No atempo here: slowing speech sounds draggy, so it is forbidden outright;
+        # so any remaining shortfall stays a natural gap and the evaluator asks for
+        # fuller text instead.
+    return AudioFitResult(audio=audio, notes=tuple(report))
 
 
 def misfit(audio: np.ndarray, window_s: float) -> float:

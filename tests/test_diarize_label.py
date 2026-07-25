@@ -8,8 +8,8 @@ Invariants under test:
 - phrases without word timings fall back to whole-phrase max-overlap labeling
 """
 
-from podcast_dub.models import DiarizationSegment, Phrase, PhraseWord, SpeakerPhrase
 from podcast_dub.stages.diarize import MIN_SPEECH_FRAC, label_phrases
+from podcast_dub.types import DiarizationSegment, Phrase, PhraseWord, SpeakerPhrase
 
 
 def seg(start, end, speaker):
@@ -71,7 +71,9 @@ class TestLabelPhrases:
         phr = [phrase(9.9, 10.2, "x")]
         out, mapping, _ = label_phrases(phr, segs, [])
         assert "speaker_2" not in mapping
-        assert out[0].speaker in ("spk_0", "spk_1")
+        # the 9.9-10.2s phrase overlaps spk_0 by 0.10s and spk_1 by 0.15s,
+        # so max-overlap labelling must pick spk_1
+        assert out[0].speaker == "spk_1"
 
     def test_no_words_fallback_no_split(self):
         # spanning a real handoff but no word timings -> whole-phrase label

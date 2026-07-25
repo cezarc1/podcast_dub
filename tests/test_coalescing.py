@@ -8,9 +8,9 @@ Invariants under test:
 - split constraints (sentence boundaries, size cap)
 """
 
-from podcast_dub.models import SubtitleCue, TranslationUnit
 from podcast_dub.stages.tts import MAX_CHUNK_S, SENT_END, TURN_GAP, build_turns
 from podcast_dub.tools.turn_tts_sample import group_units
+from podcast_dub.types import SubtitleCue, TranslationUnit
 
 
 def cue(speaker, start, end, text):

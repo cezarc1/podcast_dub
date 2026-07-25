@@ -10,11 +10,13 @@ If this module runs under transformers<5, it re-executes itself with the ASR
 venv interpreter (DUB_ASR_PYTHON env var, default <project>/.venv-asr/bin/python).
 """
 
+import itertools
 import logging
 import os
 import re
 import subprocess
 from collections.abc import Sequence
+from pathlib import Path
 
 from tqdm import tqdm
 
@@ -22,8 +24,15 @@ from podcast_dub.artifacts import build_provenance, load_cached_artifact, write_
 from podcast_dub.audio_utils import dur_of
 from podcast_dub.config import JobConfig
 from podcast_dub.device_utils import helper_process_env, helper_python, resolve_device_plan
-from podcast_dub.model_catalog import ALIGNER_ID, ALIGNER_REVISION, ASR_ID, ASR_REVISION
-from podcast_dub.models import (
+from podcast_dub.model_catalog import (
+    ALIGNER_ID,
+    ALIGNER_REVISION,
+    ASR_ID,
+    ASR_REVISION,
+    validate_model_snapshot,
+)
+from podcast_dub.pipeline_artifacts import PHRASES
+from podcast_dub.types import (
     AlignedWord,
     AsrBackendRequest,
     AsrBackendResult,
@@ -33,17 +42,19 @@ from podcast_dub.models import (
     Phrase,
     PhraseWord,
 )
-from podcast_dub.pipeline_artifacts import PHRASES
 
 logger = logging.getLogger(__name__)
 
 CHUNK_S = 100.0
 MAX_COLLAPSED_WORD_RUN = 8
 SENT_END_ZH = re.compile(r"[，。！？；、…,.!?;]$")
-VDIR = os.path.dirname(os.path.abspath(__file__))
+# Phrase grouping knobs: split on a silence gap this long, and never let a
+# phrase span longer than this. Deliberately NOT provenance parameters.
+PHRASE_GAP_S = 0.3
+MAX_PHRASE_S = 15.0
 
 
-def _tf_major():
+def _tf_major() -> int:
     try:
         import transformers
 
@@ -77,15 +88,16 @@ def run_asr(cfg: JobConfig) -> str:
         execution_plan=plan,
     )
     if load_cached_artifact(out, PHRASES, provenance) is not None:
-        print(f"asr: cached {out}")
+        logger.info("asr: cached %s", out)
         return out
-    if _tf_major() >= 5:
+    tf_major = _tf_major()
+    if tf_major >= 5:
         result = _run_asr_inline(request)
     else:
         asr_py = helper_python("DUB_ASR_PYTHON", ".venv-asr")
         if not os.path.exists(asr_py):
             raise RuntimeError(
-                f"transformers {_tf_major()} < 5 and no ASR venv at {asr_py}. "
+                f"transformers {tf_major} < 5 and no ASR venv at {asr_py}. "
                 "Create it: uv venv .venv-asr && uv pip install --python .venv-asr/bin/python "
                 "'transformers==5.14.1' torch torchaudio accelerate librosa soundfile pydantic"
             )
@@ -110,20 +122,20 @@ def run_asr(cfg: JobConfig) -> str:
             cmd += ["--window", str(request.window_s)]
         env = helper_process_env()
         subprocess.run(cmd, check=True, env=env)
-        result = AsrBackendResult.model_validate_json(open(result_path, "rb").read())
+        result = AsrBackendResult.model_validate_json(Path(result_path).read_bytes())
         os.remove(result_path)
     write_artifact_atomic(out, PHRASES, provenance, result.phrases)
     return out
 
 
-def _group_phrases(timestamps: tuple[AlignedWord, ...] | list[AlignedWord], offset: float) -> tuple[Phrase, ...]:
+def _group_phrases(timestamps: Sequence[AlignedWord], offset: float) -> tuple[Phrase, ...]:
     words = tuple(PhraseWord(text=word.text, start=word.start + offset, end=word.end + offset) for word in timestamps)
     if not words:
         raise RuntimeError("asr: forced aligner returned no words")
     phrases: list[list[PhraseWord]] = []
     cur: list[PhraseWord] = [words[0]]
-    for a, b in zip(words, words[1:], strict=False):
-        if b.start - a.end > 0.3 or SENT_END_ZH.search(a.text) or b.start - cur[0].start > 15.0:
+    for a, b in itertools.pairwise(words):
+        if b.start - a.end > PHRASE_GAP_S or SENT_END_ZH.search(a.text) or b.start - cur[0].start > MAX_PHRASE_S:
             phrases.append(cur)
             cur = [b]
         else:
@@ -183,9 +195,7 @@ def _run_asr_inline(request: AsrBackendRequest) -> AsrBackendResult:
     chunk_ranges = _chunk_ranges(limit)
 
     dtype = torch.bfloat16 if request.plan.dtype == "bfloat16" else torch.float32
-    print("asr: loading models...", flush=True)
-    from podcast_dub.model_catalog import validate_model_snapshot
-
+    logger.info("asr: loading models...")
     asr_path = snapshot_download(repo_id=ASR_ID, revision=ASR_REVISION)
     aligner_path = snapshot_download(repo_id=ALIGNER_ID, revision=ALIGNER_REVISION)
     validate_model_snapshot(asr_path)
@@ -203,6 +213,7 @@ def _run_asr_inline(request: AsrBackendRequest) -> AsrBackendResult:
         dtype=dtype,
         device_map=request.plan.device,
     )
+    logger.info("asr: loaded models. Beginning ASR...")
 
     all_words: list[AlignedWord] = []
     progress = tqdm(enumerate(chunk_ranges), total=len(chunk_ranges), desc="asr", unit="chunk")
@@ -227,7 +238,7 @@ def _run_asr_inline(request: AsrBackendRequest) -> AsrBackendResult:
             check=True,
         ).stdout
         tmp = os.path.join(os.path.dirname(request.audio_file), f"_asr_chunk_{i}.wav")
-        open(tmp, "wb").write(seg)
+        Path(tmp).write_bytes(seg)
         inputs = asr_p.apply_transcription_request(audio=tmp)
         inputs = inputs.to(asr_m.device, asr_m.dtype)
         out_ids = asr_m.generate(**inputs, max_new_tokens=4096)
@@ -253,7 +264,7 @@ def _run_asr_inline(request: AsrBackendRequest) -> AsrBackendResult:
         progress.set_postfix(words=len(all_words))
 
     phrases = _group_phrases(all_words, 0)
-    print(f"asr: produced {len(phrases)} phrases")
+    logger.info("asr: produced %d phrases", len(phrases))
     return AsrBackendResult(
         words=tuple(all_words),
         phrases=phrases,
@@ -264,6 +275,9 @@ def _run_asr_inline(request: AsrBackendRequest) -> AsrBackendResult:
 if __name__ == "__main__":
     import argparse
 
+    from podcast_dub.logging_config import configure_logging
+
+    configure_logging()
     ap = argparse.ArgumentParser()
     ap.add_argument("--audio", required=True)
     ap.add_argument("--out", required=True)

@@ -1,7 +1,5 @@
-"""Pinned model identities used by local pipeline stages."""
-
 import json
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -28,20 +26,21 @@ _UNSAFE_CONFIG_FIELDS = frozenset(
 )
 
 
-def _unsafe_field(value: Any) -> str | None:
+def _unsafe_fields(value: Any) -> Iterator[str]:
+    """Yield unsafe field names at any depth, in document order (mappings and lists only)."""
     if isinstance(value, Mapping):
         for key, nested in value.items():
             if key in _UNSAFE_CONFIG_FIELDS:
-                return str(key)
-            found = _unsafe_field(nested)
-            if found is not None:
-                return found
+                yield str(key)
+            else:
+                yield from _unsafe_fields(nested)
     elif isinstance(value, list):
         for nested in value:
-            found = _unsafe_field(nested)
-            if found is not None:
-                return found
-    return None
+            yield from _unsafe_fields(nested)
+
+
+def _unsafe_field(value: Any) -> str | None:
+    return next(_unsafe_fields(value), None)
 
 
 def validate_model_snapshot(snapshot_path: str | Path) -> None:

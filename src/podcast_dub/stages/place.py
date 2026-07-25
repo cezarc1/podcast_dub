@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 
@@ -12,10 +13,17 @@ from tqdm import tqdm
 from podcast_dub.artifacts import build_provenance, load_cached_artifact, read_artifact, write_artifact_atomic
 from podcast_dub.audio_utils import SR, decode_f32, dur_of, srt_ts, write_wav_pcm16
 from podcast_dub.config import JobConfig
-from podcast_dub.models import PlacementResult, TurnChunk
 from podcast_dub.pipeline_artifacts import PLACEMENT_RESULT, TURN_CHUNKS
+from podcast_dub.stages.tts import MAX_REWRITE_WORDS
 from podcast_dub.stages.verify import verify_media
-from podcast_dub.timing import TIMING_POLICY_VERSION, FittedTurn, evaluate_timeline, group_logical_turns
+from podcast_dub.timing import (
+    TIMING_POLICY_VERSION,
+    FittedTurn,
+    evaluate_timeline,
+    group_by_logical_turns,
+    rewrite_can_help,
+)
+from podcast_dub.types import PlacementResult, TurnChunk
 
 BED_FILTER = (
     "[1:a]asplit=2[sc][mix];[0:a][sc]sidechaincompress=threshold=0.01:ratio=20:"
@@ -23,10 +31,27 @@ BED_FILTER = (
     "[bed][mix]amix=inputs=2:normalize=0,alimiter=limit=0.89[out]"
 )
 
+logger = logging.getLogger(__name__)
+
+
+def _mix_add(mix: np.ndarray, offset: int, audio: np.ndarray) -> int:
+    room = max(len(mix) - offset, 0)
+    trimmed = max(len(audio) - room, 0)
+    if trimmed:
+        audio = audio[:room]
+    mix[offset : offset + len(audio)] += audio
+    return trimmed
+
+
+def _bed_is_stale(bed_path: str, video_path: str) -> bool:
+    if not os.path.exists(bed_path):
+        return True
+    return os.path.getmtime(bed_path) < os.path.getmtime(video_path)
+
 
 def _evaluate_chunks(chunks: tuple[TurnChunk, ...], *, total_s: float) -> tuple[FittedTurn, ...]:
     return evaluate_timeline(
-        group_logical_turns(chunks, stage="place"),
+        group_by_logical_turns(chunks, stage="place"),
         total_s,
         lambda path: decode_f32(str(path), 1.0),
         stage="place",
@@ -34,7 +59,11 @@ def _evaluate_chunks(chunks: tuple[TurnChunk, ...], *, total_s: float) -> tuple[
 
 
 def _require_placeable(fitted_turns: tuple[FittedTurn, ...]) -> None:
-    failures = [item.assessment for item in fitted_turns if item.assessment.rewrite_direction is not None]
+    failures = [
+        item.assessment
+        for item in fitted_turns
+        if item.assessment.rewrite_direction is not None and rewrite_can_help(item, word_ceiling=MAX_REWRITE_WORDS)
+    ]
     if not failures:
         return
     details = ", ".join(
@@ -59,7 +88,7 @@ def run_place(cfg: JobConfig) -> str:
         if all(os.path.exists(path) for path in required):
             verification = verify_media(cfg.resolved_audio(), cached.voice_file)
             if verification.passed:
-                print(f"place: cached {cached.output_file}")
+                logger.info("place: cached %s", cached.output_file)
                 return cached.output_file
 
     chunks = read_artifact(turns_path, TURN_CHUNKS).payload
@@ -77,7 +106,10 @@ def run_place(cfg: JobConfig) -> str:
         assessment = fitted_turn.assessment
         audio = fitted_turn.audio
         offset = int(assessment.start_s * SR)
-        mix[offset : offset + len(audio)] += audio
+        if trimmed := _mix_add(mix, offset, audio):
+            progress.write(
+                f"place: t{logical_turn.turn_id} tail trimmed {trimmed / SR:.2f}s past the end of the mix buffer"
+            )
         if assessment.fit_notes:
             progress.write(
                 f"place: t{logical_turn.turn_id} ({logical_turn.speaker}, {len(logical_turn.chunks)} chunk(s)): "
@@ -86,26 +118,27 @@ def run_place(cfg: JobConfig) -> str:
             )
         progress.set_postfix_str(f"t{logical_turn.turn_id} {logical_turn.speaker} lag{assessment.lag_s:+.1f}")
 
-    peak = float(np.max(np.abs(mix))) or 1.0
+    peak = float(np.max(np.abs(mix)))
     if peak > 0.89:
         mix *= 0.89 / peak
     voice = os.path.join(workdir, "dub_voice.wav")
     write_wav_pcm16(voice, (np.clip(mix, -1, 1) * 32767).astype(np.int16), SR)
 
     subtitles = os.path.join(workdir, f"dub_{cfg.target_lang}.srt")
+    ordered_chunks = [chunk for logical_turn in logical for chunk in logical_turn.chunks]
     with open(subtitles, "w", encoding="utf-8") as subtitle_file:
-        sequence = 0
-        for logical_turn in logical:
-            for chunk in logical_turn.chunks:
-                sequence += 1
-                subtitle_file.write(f"{sequence}\n{srt_ts(chunk.start)} --> {srt_ts(chunk.end)}\n{chunk.text}\n\n")
+        for sequence, chunk in enumerate(ordered_chunks, start=1):
+            subtitle_file.write(f"{sequence}\n{srt_ts(chunk.start)} --> {srt_ts(chunk.end)}\n{chunk.text}\n\n")
 
     bed_source = os.path.join(workdir, "bed.wav")
-    if not os.path.exists(bed_source):
+    if _bed_is_stale(bed_source, cfg.video):
+        temporary_bed = bed_source + ".tmp.wav"
         subprocess.run(
-            ["ffmpeg", "-v", "error", "-y", "-i", cfg.video, "-vn", "-ac", "1", "-ar", "44100", bed_source],
+            # the bed must share the voice track's rate for BED_FILTER's amix
+            ["ffmpeg", "-v", "error", "-y", "-i", cfg.video, "-vn", "-ac", "1", "-ar", str(SR), temporary_bed],
             check=True,
         )
+        os.replace(temporary_bed, bed_source)
     mixed = os.path.join(workdir, "dub_mix.wav")
     subprocess.run(
         [
@@ -171,5 +204,5 @@ def run_place(cfg: JobConfig) -> str:
         verification=verification,
     )
     write_artifact_atomic(result_path, PLACEMENT_RESULT, provenance, result)
-    print(f"place: wrote {output}")
+    logger.info("place: wrote %s", output)
     return output

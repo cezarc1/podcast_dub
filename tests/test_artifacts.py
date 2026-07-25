@@ -11,7 +11,7 @@ from podcast_dub.artifacts import (
     stable_digest,
     write_artifact_atomic,
 )
-from podcast_dub.models import Phrase, PhraseWord, StageName
+from podcast_dub.types import Phrase, PhraseWord, StageName
 
 PHRASES: ArtifactSpec[tuple[Phrase, ...]] = ArtifactSpec(stage=StageName.ASR, payload_type=tuple[Phrase, ...])
 

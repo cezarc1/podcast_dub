@@ -9,6 +9,7 @@ from dspy import Prediction
 
 logger = logging.getLogger(__name__)
 
+
 class TranslateSpokenASR(dspy.Signature):
     """
     Translate machine-transcribed spoken conversation into natural spoken

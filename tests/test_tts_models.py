@@ -2,9 +2,9 @@ import numpy as np
 import pytest
 
 from podcast_dub.audio_utils import SR
-from podcast_dub.models import TranslationUnit, TurnChunk, TurnChunkDraft
 from podcast_dub.stages import tts
 from podcast_dub.stages.tts import build_turns
+from podcast_dub.types import TranslationUnit, TurnChunk, TurnChunkDraft
 
 
 def test_build_turns_returns_typed_immutable_drafts() -> None:
@@ -129,7 +129,6 @@ def test_tts_preflight_rewrites_audio_that_capped_fit_cannot_place(monkeypatch) 
         tts,
         "decode_f32",
         lambda _path, _tempo=1.0: np.ones(round(decoded_duration_s * SR), dtype=np.float32),
-        raising=False,
     )
 
     fitted = tts._evaluate_chunks((chunk,), total_s=13.76)
@@ -163,6 +162,34 @@ def test_tts_final_fit_rejects_an_unresolved_fuller_turn(monkeypatch) -> None:
     assert tts._select_rewrite_work(fitted) == list(fitted)
     with pytest.raises(RuntimeError, match=r"tts: fit exhausted.*turn 12"):
         tts._require_final_fit(fitted)
+
+
+def test_fuller_turn_at_the_word_ceiling_is_not_rewritten_or_failed(monkeypatch) -> None:
+    # Same shape as the test above, but the chunk already holds MAX_REWRITE_WORDS.
+    # The budget allocator caps every chunk at that ceiling, so asking for "fuller"
+    # text cannot change the duration — the loop must not spend three rounds of LLM
+    # calls on it, and must not fail the run over a gap nothing could close.
+    chunk = TurnChunk(
+        start=0.0,
+        end=2.0,
+        speaker="host",
+        text=" ".join(["word"] * tts.MAX_REWRITE_WORDS),
+        turn_id=12,
+        part_index=0,
+        audio_file="/tmp/turn-12.mp3",
+        audio_duration_s=2.0,
+        audio_sha256="b" * 64,
+    )
+    monkeypatch.setattr(
+        tts,
+        "decode_f32",
+        lambda _path, _tempo=1.0: np.ones(round(2.0 * SR), dtype=np.float32),
+    )
+    fitted = tts._evaluate_chunks((chunk,), total_s=10.25)
+
+    assert fitted[0].assessment.rewrite_direction == "fuller"
+    assert tts._select_rewrite_work(fitted) == []
+    tts._require_final_fit(fitted)
 
 
 def test_fuller_word_budgets_redistribute_oversized_chunk_budget() -> None:

@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 from podcast_dub.audio_utils import SR
-from podcast_dub.models import TurnChunk
+from podcast_dub.types import TurnChunk
 
 
 def _timing_module():
@@ -46,7 +46,7 @@ def test_evaluator_rewrites_remote_turn_that_old_ratio_gate_accepted() -> None:
     chunk = _chunk(turn_id=1, part_index=0, start=9.9, end=12.94, duration_s=4.368)
 
     fitted = timing.evaluate_timeline(
-        timing.group_logical_turns((chunk,), stage="tts"),
+        timing.group_by_logical_turns((chunk,), stage="tts"),
         total_s=13.76,
         load_audio=lambda _path: np.ones(round(decoded_duration_s * SR), dtype=np.float32),
         stage="tts",
@@ -73,7 +73,7 @@ def test_evaluator_includes_interchunk_gap_and_sequential_lag() -> None:
     )
 
     fitted = timing.evaluate_timeline(
-        timing.group_logical_turns(chunks, stage="place"),
+        timing.group_by_logical_turns(chunks, stage="place"),
         total_s=3.0,
         load_audio=lambda path: np.ones(round(durations[path] * SR), dtype=np.float32),
         stage="place",
@@ -97,7 +97,7 @@ def test_evaluator_rewrites_long_turn_with_large_uncovered_tail() -> None:
     )
 
     fitted = timing.evaluate_timeline(
-        timing.group_logical_turns((chunk,), stage="tts"),
+        timing.group_by_logical_turns((chunk,), stage="tts"),
         total_s=300.0,
         load_audio=lambda _path: np.ones(round(119.26 * SR), dtype=np.float32),
         stage="tts",
@@ -120,7 +120,7 @@ def test_evaluator_rewrites_any_tail_beyond_verifier_tolerance() -> None:
     )
 
     fitted = timing.evaluate_timeline(
-        timing.group_logical_turns((chunk,), stage="tts"),
+        timing.group_by_logical_turns((chunk,), stage="tts"),
         total_s=300.0,
         load_audio=lambda _path: np.ones(round(132.1 * SR), dtype=np.float32),
         stage="tts",
@@ -143,7 +143,7 @@ def test_evaluator_accepts_audio_within_the_fitters_long_tolerance() -> None:
     )
 
     fitted = timing.evaluate_timeline(
-        timing.group_logical_turns((chunk,), stage="tts"),
+        timing.group_by_logical_turns((chunk,), stage="tts"),
         total_s=300.0,
         load_audio=lambda _path: np.ones(round(154.3525 * SR), dtype=np.float32),
         stage="tts",

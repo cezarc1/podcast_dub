@@ -4,13 +4,17 @@
 from __future__ import annotations
 
 import argparse
+import logging
 from collections.abc import Sequence
+from pathlib import Path
 
 from podcast_dub.artifacts import read_artifact
-from podcast_dub.models import SimulationTurn, SubtitleCue, SubtitleUnit, TurnChunkDraft
 from podcast_dub.pipeline_artifacts import TRANSLATION_UNITS
 from podcast_dub.stages.tts import SENT_END, build_turns
 from podcast_dub.timing import EARLY_START_LIMIT_S, LATE_START_LIMIT_S, MIN_SILENCE_GAP_S
+from podcast_dub.types import SimulationTurn, SubtitleCue, SubtitleUnit, TurnChunkDraft
+
+logger = logging.getLogger(__name__)
 
 
 def group_units(cues: Sequence[SubtitleCue]) -> tuple[SubtitleUnit, ...]:
@@ -68,13 +72,16 @@ def simulate(
 
 
 def main() -> None:
+    from podcast_dub.logging_config import configure_logging
+
+    configure_logging()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("workdir", help="pipeline workdir containing units.json")
     parser.add_argument("--max-t", type=float, default=None)
     parser.add_argument("--words-per-second", type=float, default=3.6)
     args = parser.parse_args()
 
-    units = read_artifact(f"{args.workdir}/units.json", TRANSLATION_UNITS).payload
+    units = read_artifact(Path(args.workdir) / "units.json", TRANSLATION_UNITS).payload
     if args.max_t is not None:
         units = tuple(unit for unit in units if unit.start < args.max_t)
     chunks = build_turns(units)
@@ -85,11 +92,16 @@ def main() -> None:
         )
         for chunk in chunks
     )
-    total = args.max_t or (turns[-1].end + 0.5)
+    total = args.max_t if args.max_t is not None else (turns[-1].end + 0.5)
     for turn, (start, window) in zip(turns, simulate(turns, total), strict=True):
-        print(
-            f"t{turn.turn_id}p{turn.part_index} {turn.speaker}: "
-            f"cue={turn.start:.2f}s placed={start:.2f}s window={window:.2f}s"
+        logger.info(
+            "t%dp%d %s: cue=%.2fs placed=%.2fs window=%.2fs",
+            turn.turn_id,
+            turn.part_index,
+            turn.speaker,
+            turn.start,
+            start,
+            window,
         )
 
 

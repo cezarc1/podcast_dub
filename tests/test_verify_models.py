@@ -1,7 +1,7 @@
 import numpy as np
 
-from podcast_dub.models import VerificationResult
 from podcast_dub.stages.verify import evaluate_masks
+from podcast_dub.types import VerificationResult
 
 
 def test_evaluate_masks_returns_typed_failure_with_longest_gap() -> None:

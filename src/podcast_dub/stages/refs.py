@@ -12,8 +12,10 @@ Input:  <workdir>/diar_segments.json + job audio
 Output: <workdir>/refs/ref_<speaker>.wav (+ .txt best-effort transcript)
 """
 
+import logging
 import os
 import subprocess
+from collections.abc import Sequence
 
 import numpy as np
 from tqdm import tqdm
@@ -28,16 +30,18 @@ from podcast_dub.artifacts import (
 from podcast_dub.audio_utils import write_wav_pcm16
 from podcast_dub.config import JobConfig
 from podcast_dub.model_catalog import TTS_ID, TTS_REVISION
-from podcast_dub.models import DiarizationSegment, ModelIdentity, SpeakerReference
 from podcast_dub.pipeline_artifacts import DIARIZATION_SEGMENTS, SPEAKER_PHRASES, SPEAKER_REFERENCES
 from podcast_dub.stages.diarize import speaker_mapping
+from podcast_dub.types import DiarizationSegment, ModelIdentity, SpeakerPhrase, SpeakerReference
 
 SR = 24000
 TARGET_S = 60.0
 MIN_D, MAX_D = 4.0, 12.0
 CLEAR_S = 0.2
 JOIN_SIL_S = 0.35
-MIN_TOTAL_S = 30.0  # warn below this: clone quality will suffer
+MIN_TOTAL_S = 30.0  # hard floor: below this the run fails, clone quality suffers
+
+logger = logging.getLogger(__name__)
 
 
 def _select_reference_segments(
@@ -64,6 +68,35 @@ def _select_reference_segments(
         if total >= target_s:
             break
     return tuple(selected), total
+
+
+def _join_with_silence(parts: Sequence[np.ndarray], silence: np.ndarray) -> np.ndarray:
+    if len(parts) == 1:
+        return parts[0]
+    pieces: list[np.ndarray] = [parts[0]]
+    for part in parts[1:]:
+        pieces.append(silence)
+        pieces.append(part)
+    return np.concatenate(pieces)
+
+
+def _build_reference_transcript(
+    phrases: Sequence[SpeakerPhrase],
+    segments: Sequence[DiarizationSegment],
+    speaker: str,
+) -> str:
+    texts = [
+        "".join(
+            phrase.text
+            for phrase in phrases
+            if phrase.speaker == speaker and max(phrase.start, segment.start) < min(phrase.end, segment.end)
+        ).strip()
+        for segment in segments
+    ]
+    transcript = "。".join(text for text in texts if text)
+    if not transcript:
+        logger.warning("refs: no transcript text found for %s reference audio", speaker)
+    return transcript
 
 
 def run_refs(cfg: JobConfig) -> str:
@@ -93,7 +126,7 @@ def run_refs(cfg: JobConfig) -> str:
         os.path.exists(reference.audio_file) and file_digest(reference.audio_file) == reference.audio_sha256
         for reference in cached
     ):
-        print(f"refs: cached {metadata_path}")
+        logger.info("refs: cached %s", metadata_path)
         return refs_dir
 
     raw = read_artifact(segments_path, DIARIZATION_SEGMENTS).payload
@@ -111,8 +144,9 @@ def run_refs(cfg: JobConfig) -> str:
                 f"refs: only {total:.0f}s clean audio for {disp}; at least {MIN_TOTAL_S:.0f}s is required"
             )
 
+        ordered_picks = sorted(picks, key=lambda item: item.start)
         parts = []
-        for segment in sorted(picks, key=lambda item: item.start):
+        for segment in ordered_picks:
             raw_pcm = subprocess.run(
                 [
                     "ffmpeg",
@@ -137,21 +171,11 @@ def run_refs(cfg: JobConfig) -> str:
             ).stdout
             parts.append(np.frombuffer(raw_pcm, dtype=np.int16))
         silence = np.zeros(int(JOIN_SIL_S * SR), dtype=np.int16)
-        joined = parts[0]
-        for part in parts[1:]:
-            joined = np.concatenate([joined, silence, part])
+        joined = _join_with_silence(parts, silence)
         write_wav_pcm16(wav_out, joined, SR)
         # best-effort transcript (unused by x_vector_only cloning; for records)
-        texts = []
-        for segment in sorted(picks, key=lambda item: item.start):
-            seg_text = "".join(
-                phrase.text
-                for phrase in phrases
-                if phrase.speaker == disp and max(phrase.start, segment.start) < min(phrase.end, segment.end)
-            )
-            texts.append(seg_text.strip())
         with open(txt_out, "w", encoding="utf-8") as transcript_file:
-            transcript_file.write("。".join(text for text in texts if text))
+            transcript_file.write(_build_reference_transcript(phrases, ordered_picks, disp))
         references.append(
             SpeakerReference(
                 speaker=disp,

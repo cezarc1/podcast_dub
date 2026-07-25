@@ -14,16 +14,23 @@ exists (usable as a build gate).
 """
 
 import argparse
+import logging
 import os
 import sys
 
 import numpy as np
 
 from podcast_dub.audio_utils import decode_f32
-from podcast_dub.models import VerificationResult
+from podcast_dub.types import VerificationResult
 
 SR = 16000
 FRAME = int(0.025 * SR)
+# Gate defaults, shared by verify_media() and the CLI so the two cannot drift apart.
+DEAD_S = 5.0
+TOL_S = 1.5
+MIN_COVERAGE = 0.99
+
+logger = logging.getLogger(__name__)
 
 
 def load_mono(path: str, sr: int = SR) -> np.ndarray:
@@ -69,7 +76,7 @@ def evaluate_masks(
     tolerance_frames: int,
     frames_per_second: float,
     max_dead_s: float,
-    min_coverage: float = 0.99,
+    min_coverage: float = MIN_COVERAGE,
 ) -> VerificationResult:
     n = min(len(dubbed), len(original))
     dubbed, original = dubbed[:n], original[:n]
@@ -88,9 +95,9 @@ def verify_media(
     original_path: str,
     dub_path: str,
     *,
-    dead_s: float = 5.0,
-    tolerance_s: float = 1.5,
-    min_coverage: float = 0.99,
+    dead_s: float = DEAD_S,
+    tolerance_s: float = TOL_S,
+    min_coverage: float = MIN_COVERAGE,
 ) -> VerificationResult:
     dubbed = active_mask(load_mono(dub_path), floor=0.005)
     original = active_mask(load_mono(original_path), floor=0.006)
@@ -106,11 +113,14 @@ def verify_media(
 
 
 def main() -> None:
+    from podcast_dub.logging_config import configure_logging
+
+    configure_logging()
     ap = argparse.ArgumentParser()
     ap.add_argument("workdir")
-    ap.add_argument("--dead-s", type=float, default=5.0)
-    ap.add_argument("--tol-s", type=float, default=1.5)
-    ap.add_argument("--min-coverage", type=float, default=0.99)
+    ap.add_argument("--dead-s", type=float, default=DEAD_S)
+    ap.add_argument("--tol-s", type=float, default=TOL_S)
+    ap.add_argument("--min-coverage", type=float, default=MIN_COVERAGE)
     ap.add_argument("--original", default=None, help="original audio path (default: <workdir>/<stem>.wav from probe)")
     a = ap.parse_args()
 
@@ -133,9 +143,9 @@ def main() -> None:
         tolerance_s=a.tol_s,
         min_coverage=a.min_coverage,
     )
-    print(f"coverage (dub active within ±{a.tol_s}s): {result.coverage * 100:.1f}%")
-    print(f"longest dead-air run: {result.longest_dead_air_s:.1f}s")
-    print("PASS" if result.passed else "FAIL")
+    logger.info("coverage (dub active within ±%ss): %.1f%%", a.tol_s, result.coverage * 100)
+    logger.info("longest dead-air run: %.1fs", result.longest_dead_air_s)
+    logger.info("PASS" if result.passed else "FAIL")
     sys.exit(0 if result.passed else 1)
 
 

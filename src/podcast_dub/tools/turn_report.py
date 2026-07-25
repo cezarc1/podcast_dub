@@ -3,6 +3,7 @@
 
 import argparse
 import html
+import logging
 from pathlib import Path
 
 from podcast_dub.artifacts import read_artifact
@@ -14,8 +15,13 @@ from podcast_dub.tools.turn_tts_sample import simulate
 # Speaker colors are assigned from this palette in order of first appearance.
 PALETTE = ["#3b82f6", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"]
 
+logger = logging.getLogger(__name__)
+
 
 def main() -> None:
+    from podcast_dub.logging_config import configure_logging
+
+    configure_logging()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("workdir")
     parser.add_argument("--max-t", type=float, default=300.0)
@@ -64,7 +70,7 @@ def main() -> None:
 <table><tr><th>#</th><th>speaker</th><th>parts</th><th>cue start</th><th>cue end</th><th>placed start</th><th>window</th><th>lag</th><th>text</th></tr>
 {"".join(rows)}</table>"""
     (workdir / "turns_report.html").write_text(report, encoding="utf-8")
-    print(f"wrote {workdir / 'turns_debug.srt'} and {workdir / 'turns_report.html'}")
+    logger.info("wrote %s and %s", workdir / "turns_debug.srt", workdir / "turns_report.html")
 
 
 if __name__ == "__main__":

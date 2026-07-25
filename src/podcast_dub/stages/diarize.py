@@ -13,15 +13,21 @@ Output: <workdir>/diar_segments.json  raw diarization segments
         <workdir>/phrases_spk.json    phrases with "speaker" (cfg name or spk_N)
 """
 
+import bisect
+import itertools
 import logging
 import os
 import subprocess
+from collections import defaultdict
+from collections.abc import Sequence
+from pathlib import Path
 
 from podcast_dub.artifacts import build_provenance, load_cached_artifact, read_artifact, write_artifact_atomic
 from podcast_dub.config import JobConfig
 from podcast_dub.device_utils import helper_process_env, helper_python, resolve_device_plan
 from podcast_dub.model_catalog import SORTFORMER_FILE, SORTFORMER_ID, SORTFORMER_REVISION
-from podcast_dub.models import (
+from podcast_dub.pipeline_artifacts import DIARIZATION_SEGMENTS, PHRASES, SPEAKER_PHRASES
+from podcast_dub.types import (
     DevicePlan,
     DiarizationBackendRequest,
     DiarizationBackendResult,
@@ -31,9 +37,8 @@ from podcast_dub.models import (
     Phrase,
     SpeakerPhrase,
 )
-from podcast_dub.pipeline_artifacts import DIARIZATION_SEGMENTS, PHRASES, SPEAKER_PHRASES
 
-VDIR = os.path.dirname(os.path.abspath(__file__))
+logger = logging.getLogger(__name__)
 
 MERGE_GAP_S = 0.3  # merge adjacent same-speaker segments across shorter gaps
 MIN_SPEECH_FRAC = 0.01  # drop speakers below this share of total speech (noise)
@@ -66,7 +71,7 @@ def run_diarize(cfg: JobConfig) -> str:
         {"phrases": phrases_path, "segments": segs_path} if os.path.exists(segs_path) else {"phrases": phrases_path}
     )
     if load_cached_artifact(out, SPEAKER_PHRASES, phrase_provenance) is not None:
-        print(f"diarize: cached {out}")
+        logger.info(f"diarize: cached {out}")
         return out
     phrases = read_artifact(phrases_path, PHRASES).payload
     segment_provenance = build_provenance(
@@ -83,9 +88,9 @@ def run_diarize(cfg: JobConfig) -> str:
     phrase_provenance = _phrase_provenance({"phrases": phrases_path, "segments": segs_path})
     phrases, mapping, totals = label_phrases(phrases, raw, cfg.speaker_names)
     pretty = {mapping[s]: round(t) for s, t in totals.items() if s in mapping}
-    print(f"diarize: speakers {pretty}s -> {mapping}")
+    logger.info(f"diarize: speakers {pretty}s -> {mapping}")
     write_artifact_atomic(out, SPEAKER_PHRASES, phrase_provenance, phrases)
-    print(f"diarize: wrote {out}")
+    logger.info(f"diarize: wrote {out}")
     return out
 
 
@@ -95,7 +100,7 @@ def _have_nemo() -> bool:
 
         return True
     except Exception:
-        logging.warning("diarize: WARNING no NeMo (set DUB_NEMO_PYTHON or create .venv-nemo)")
+        logger.warning("diarize: WARNING no NeMo (set DUB_NEMO_PYTHON or create .venv-nemo)")
         return False
 
 
@@ -125,7 +130,7 @@ def _produce_segments(request: DiarizationBackendRequest, workdir: str) -> tuple
             check=True,
             env=env,
         )
-        result = DiarizationBackendResult.model_validate_json(open(result_path, "rb").read())
+        result = DiarizationBackendResult.model_validate_json(Path(result_path).read_bytes())
         os.remove(result_path)
         return result.segments
     raise RuntimeError(f"diarize: required NeMo backend is unavailable; set DUB_NEMO_PYTHON or create {nemo_py}")
@@ -155,13 +160,11 @@ def _run_sortformer(request: DiarizationBackendRequest) -> tuple[DiarizationSegm
     for s in segs[0]:  # lines of "start end speaker_N"
         a, b, spk = s.split()
         out.append(DiarizationSegment(start=float(a), end=float(b), speaker=spk))
-    print(f"diarize: sortformer -> {len(out)} raw segments", flush=True)
+    logger.info("diarize: sortformer -> %d raw segments", len(out))
     return tuple(out)
 
 
-def merge_segments(
-    raw_segs: tuple[DiarizationSegment, ...] | list[DiarizationSegment],
-) -> tuple[DiarizationSegment, ...]:
+def merge_segments(raw_segs: Sequence[DiarizationSegment]) -> tuple[DiarizationSegment, ...]:
     segs = sorted(raw_segs, key=lambda segment: (segment.start, segment.end))
     merged: list[DiarizationSegment] = []
     for s in segs:
@@ -173,8 +176,8 @@ def merge_segments(
 
 
 def speaker_mapping(
-    raw_segs: tuple[DiarizationSegment, ...] | list[DiarizationSegment],
-    names: tuple[str, ...] | list[str],
+    raw_segs: Sequence[DiarizationSegment],
+    names: Sequence[str],
 ) -> tuple[tuple[DiarizationSegment, ...], dict[str, str], dict[str, float]]:
     """Merge segments, drop noise speakers, order survivors by speaking time.
 
@@ -183,20 +186,22 @@ def speaker_mapping(
     speech seconds.
     """
     merged = merge_segments(raw_segs)
-    totals: dict[str, float] = {}
+    totals: defaultdict[str, float] = defaultdict(float)
     for s in merged:
-        totals[s.speaker] = totals.get(s.speaker, 0.0) + s.end - s.start
+        totals[s.speaker] += s.end - s.start
     total_all = sum(totals.values()) or 1.0
     kept = {spk for spk, t in totals.items() if t / total_all >= MIN_SPEECH_FRAC}
-    order = sorted(kept, key=lambda spk: -totals[spk])
+    # tie-break on the raw label: `kept` is a set, so duration alone would order
+    # equal-duration speakers differently from run to run (hash randomization)
+    order = sorted(kept, key=lambda spk: (-totals[spk], spk))
     mapping = {spk: (names[r] if r < len(names) else f"spk_{r}") for r, spk in enumerate(order)}
-    return merged, mapping, totals
+    return merged, mapping, dict(totals)
 
 
 def label_phrases(
-    phrases: tuple[Phrase, ...] | list[Phrase],
-    raw_segs: tuple[DiarizationSegment, ...] | list[DiarizationSegment],
-    names: tuple[str, ...] | list[str],
+    phrases: Sequence[Phrase],
+    raw_segs: Sequence[DiarizationSegment],
+    names: Sequence[str],
 ) -> tuple[tuple[SpeakerPhrase, ...], dict[str, str], dict[str, float]]:
     """Split phrases at real speaker handoffs, label by max overlap.
 
@@ -217,7 +222,7 @@ def label_phrases(
     return merge_orphans(out), mapping, totals
 
 
-def merge_orphans(out: tuple[SpeakerPhrase, ...] | list[SpeakerPhrase]) -> tuple[SpeakerPhrase, ...]:
+def merge_orphans(items: Sequence[SpeakerPhrase]) -> tuple[SpeakerPhrase, ...]:
     """Merge sub-2-char orphan phrases into the adjacent same-speaker phrase.
 
     Aligner artifacts sometimes split a sentence-final particle (的, 嗯) into a
@@ -226,6 +231,7 @@ def merge_orphans(out: tuple[SpeakerPhrase, ...] | list[SpeakerPhrase]) -> tuple
     same-speaker phrase (usually its true parent sentence), else the next;
     isolated fragments between speakers are real backchannels and stay.
     """
+    out = list(items)
     merged: list[SpeakerPhrase] = []
     i = 0
     while i < len(out):
@@ -242,9 +248,9 @@ def merge_orphans(out: tuple[SpeakerPhrase, ...] | list[SpeakerPhrase]) -> tuple
                 continue
             if i + 1 < len(out) and out[i + 1].speaker == p.speaker:
                 nxt = out[i + 1]
-                out = list(out)
                 out[i + 1] = nxt.validated_copy(
                     start=min(nxt.start, p.start),
+                    end=max(nxt.end, p.end),
                     text=p.text + nxt.text,
                     words=p.words + nxt.words,
                 )
@@ -271,7 +277,7 @@ def _split_and_label(
 ) -> tuple[SpeakerPhrase, ...]:
     words = p.words
     cuts: list[float] = []
-    for (a0, b0, spk0), (a1, b1, spk1) in zip(labeled, labeled[1:], strict=False):
+    for (a0, b0, spk0), (a1, b1, spk1) in itertools.pairwise(labeled):
         if spk0 == spk1:
             continue
         cut = (b0 + a1) / 2
@@ -296,7 +302,7 @@ def _split_and_label(
     buckets: dict[int, list] = {}
     for w in words:
         mid = (w.start + w.end) / 2
-        k = sum(1 for c in cuts if mid > c)
+        k = bisect.bisect_left(cuts, mid)
         buckets.setdefault(k, []).append(w)
     pieces: list[SpeakerPhrase] = []
     for k in sorted(buckets):
@@ -317,6 +323,9 @@ def _split_and_label(
 if __name__ == "__main__":
     import argparse
 
+    from podcast_dub.logging_config import configure_logging
+
+    configure_logging()
     ap = argparse.ArgumentParser()
     ap.add_argument("--audio", required=True)
     ap.add_argument("--out", required=True)

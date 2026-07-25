@@ -12,10 +12,10 @@ import numpy as np
 import pytest
 
 from podcast_dub.audio_utils import SR
-from podcast_dub.models import SimulationTurn, TurnChunk
 from podcast_dub.stages import place
 from podcast_dub.timing import MIN_SILENCE_GAP_S
 from podcast_dub.tools.turn_tts_sample import simulate
+from podcast_dub.types import SimulationTurn, TurnChunk
 
 
 def turn(start, dur, text=None):

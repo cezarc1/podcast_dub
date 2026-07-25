@@ -1,9 +1,18 @@
 import argparse
+import logging
 
 import pytest
 from pydantic import ValidationError
 
-from podcast_dub.config import load_toml, merge_cli, resolve_translation_api
+from podcast_dub.config import lang_name, load_toml, merge_cli, resolve_translation_api
+
+
+def test_unknown_language_name_warns_before_using_code_verbatim(caplog) -> None:
+    with caplog.at_level(logging.WARNING, logger="podcast_dub.config"):
+        display = lang_name("klingon")
+
+    assert display == "klingon"
+    assert "unrecognized language code 'klingon'; using it verbatim" in caplog.text
 
 
 def test_load_toml_reads_llm_configuration(tmp_path):
@@ -144,6 +153,9 @@ def test_translation_settings_repr_redacts_api_key(monkeypatch, make_job_config)
 
     settings = resolve_translation_api(make_job_config())
 
+    # the key must actually be resolved, not merely absent from the repr —
+    # an empty-string fallback would satisfy the redaction check on its own
+    assert settings.api_key == "translation-secret"
     assert "translation-secret" not in repr(settings)
 
 

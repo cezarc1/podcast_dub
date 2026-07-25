@@ -1,5 +1,3 @@
-"""Strict value objects shared by pipeline stages and persisted artifacts."""
-
 from __future__ import annotations
 
 import math
@@ -51,7 +49,7 @@ class DevicePlan(StrictModel):
     attention: str = Field(min_length=1)
 
     @model_validator(mode="after")
-    def validate_stage_device(self) -> DevicePlan:
+    def validate_stage_device(self) -> Self:
         if self.stage == ModelStage.DIARIZE and self.device == ConcreteDevice.MPS:
             raise ValueError("diarize does not support the mps device")
         return self
@@ -67,7 +65,7 @@ class _PositiveTimeSpan(StrictModel):
     end: NonNegativeFloat
 
     @model_validator(mode="after")
-    def validate_span(self) -> _PositiveTimeSpan:
+    def validate_span(self) -> Self:
         if not math.isfinite(self.start) or not math.isfinite(self.end):
             raise ValueError("timestamps must be finite")
         if self.end <= self.start:
@@ -80,7 +78,7 @@ class _NonNegativeTimeSpan(StrictModel):
     end: NonNegativeFloat
 
     @model_validator(mode="after")
-    def validate_span(self) -> _NonNegativeTimeSpan:
+    def validate_span(self) -> Self:
         if not math.isfinite(self.start) or not math.isfinite(self.end):
             raise ValueError("timestamps must be finite")
         if self.end < self.start:
@@ -94,7 +92,7 @@ class _WordTimeSpan(StrictModel):
     end: NonNegativeFloat
 
     @model_validator(mode="after")
-    def validate_span(self) -> _WordTimeSpan:
+    def validate_span(self) -> Self:
         if not math.isfinite(self.start) or not math.isfinite(self.end):
             raise ValueError("timestamps must be finite")
         if self.end < self.start:
@@ -115,7 +113,7 @@ class Phrase(_NonNegativeTimeSpan):
     words: tuple[PhraseWord, ...] = ()
 
     @model_validator(mode="after")
-    def validate_words(self) -> Phrase:
+    def validate_words(self) -> Self:
         previous_start = -1.0
         for word in self.words:
             if word.start < previous_start:
@@ -206,7 +204,7 @@ class LogicalTurn(_PositiveTimeSpan):
     chunks: tuple[TurnChunk, ...]
 
     @model_validator(mode="after")
-    def validate_chunks(self) -> LogicalTurn:
+    def validate_chunks(self) -> Self:
         if not self.chunks:
             raise ValueError("logical turn requires at least one chunk")
         if any(chunk.turn_id != self.turn_id or chunk.speaker != self.speaker for chunk in self.chunks):
@@ -254,7 +252,7 @@ class TranslationBatch(StrictModel):
     translations: dict[int, str]
 
     @model_validator(mode="after")
-    def validate_translations(self) -> TranslationBatch:
+    def validate_translations(self) -> Self:
         if any(not text.strip() for text in self.translations.values()):
             raise ValueError("translation batch contains empty target text")
         return self
@@ -269,7 +267,7 @@ class RewriteCache(StrictModel):
     entries: tuple[RewriteCacheEntry, ...] = ()
 
     @model_validator(mode="after")
-    def validate_entries(self) -> RewriteCache:
+    def validate_entries(self) -> Self:
         keys = [entry.key for entry in self.entries]
         if len(set(keys)) != len(keys):
             raise ValueError("rewrite cache keys must be unique")
@@ -297,7 +295,7 @@ class TranslateEvent(_ManifestEventBase):
     lines: tuple[TranslationManifestLine, ...]
 
     @model_validator(mode="after")
-    def validate_ids(self) -> TranslateEvent:
+    def validate_ids(self) -> Self:
         if len(set(self.ids)) != len(self.ids):
             raise ValueError("manifest translation ids must be unique")
         if tuple(line.id for line in self.lines) != self.ids:
@@ -332,7 +330,7 @@ class AsrBackendRequest(StrictModel):
     plan: DevicePlan
 
     @model_validator(mode="after")
-    def validate_plan(self) -> AsrBackendRequest:
+    def validate_plan(self) -> Self:
         if self.plan.stage != ModelStage.ASR:
             raise ValueError("ASR request requires an ASR device plan")
         return self
@@ -349,7 +347,7 @@ class DiarizationBackendRequest(StrictModel):
     plan: DevicePlan
 
     @model_validator(mode="after")
-    def validate_plan(self) -> DiarizationBackendRequest:
+    def validate_plan(self) -> Self:
         if self.plan.stage != ModelStage.DIARIZE:
             raise ValueError("diarization request requires a diarization device plan")
         return self

@@ -11,7 +11,7 @@ import numpy as np
 
 from podcast_dub.audio_utils import SR
 from podcast_dub.fit import LONG_OK, fit_audio
-from podcast_dub.models import LogicalTurn, TurnChunk, TurnFitAssessment
+from podcast_dub.types import LogicalTurn, TurnChunk, TurnFitAssessment
 
 MIN_SILENCE_GAP_S = 0.25
 INTER_CHUNK_GAP_S = 0.15
@@ -19,6 +19,7 @@ EARLY_START_LIMIT_S = 1.5
 LATE_START_LIMIT_S = 1.0
 FULLER_GAP_MIN_S = 1.5
 FULLER_COVERAGE_MAX = 0.85
+FULLER_WINDOW_MIN_S = 2.5  # windows shorter than this are too small to be worth refilling
 TIMING_POLICY_VERSION = 4
 
 TimingStage = Literal["tts", "place"]
@@ -31,7 +32,14 @@ class FittedTurn:
     assessment: TurnFitAssessment
 
 
-def group_logical_turns(
+def rewrite_can_help(item: FittedTurn, *, word_ceiling: int) -> bool:
+    """Returns True if a turn rewrite could still change this turn's duration based on turns current word count and word ceiling."""
+    if item.assessment.rewrite_direction != "fuller":
+        return True
+    return any(len(chunk.text.split()) < word_ceiling for chunk in item.logical_turn.chunks)
+
+
+def group_by_logical_turns(
     chunks: Sequence[TurnChunk],
     *,
     stage: TimingStage,
@@ -39,10 +47,14 @@ def group_logical_turns(
     """Group consecutive chunks while validating logical-turn identity."""
     grouped: list[LogicalTurn] = []
     current: list[TurnChunk] = []
+    closed_turn_ids: set[int] = set()
     for chunk in chunks:
         if current and chunk.turn_id != current[0].turn_id:
+            closed_turn_ids.add(current[0].turn_id)
             grouped.append(_logical_turn(current))
             current = []
+        if chunk.turn_id in closed_turn_ids:
+            raise RuntimeError(f"{stage}: turn {chunk.turn_id} reappears after a different turn")
         if current and chunk.speaker != current[0].speaker:
             raise RuntimeError(f"{stage}: turn {chunk.turn_id} contains multiple speakers")
         current.append(chunk)
@@ -78,9 +90,13 @@ def evaluate_timeline(
         parts = [load_audio(Path(chunk.audio_file)) for chunk in turn.chunks]
         if any(part.size == 0 for part in parts):
             raise RuntimeError(f"{stage}: turn {turn.turn_id} has empty audio")
-        audio = parts[0]
-        for part in parts[1:]:
-            audio = np.concatenate((audio, gap, part))
+        if len(parts) == 1:
+            audio = parts[0]  # single-part turn: hand the decoded array straight through, no copy
+        else:
+            pieces = [parts[0]]
+            for part in parts[1:]:
+                pieces.extend((gap, part))
+            audio = np.concatenate(pieces)
 
         cue_start_s = turn.start
         if previous_end_s is None:
@@ -104,13 +120,14 @@ def evaluate_timeline(
             raise RuntimeError(f"{stage}: turn {turn.turn_id} has nonpositive window {window_s:.3f}s")
 
         input_duration_s = audio.size / SR
-        fitted_audio, notes = fit_audio(audio, window_s)
+        fit_result = fit_audio(audio, window_s)
+        fitted_audio = fit_result.audio
         fitted_duration_s = fitted_audio.size / SR
         direction: Literal["tighter", "fuller"] | None = None
         if fitted_duration_s > window_s * LONG_OK:
             direction = "tighter"
         elif (
-            window_s >= 2.5
+            window_s >= FULLER_WINDOW_MIN_S
             and window_s - fitted_duration_s > FULLER_GAP_MIN_S
             and (index == len(turns) - 1 or fitted_duration_s / window_s < FULLER_COVERAGE_MAX)
         ):
@@ -126,7 +143,7 @@ def evaluate_timeline(
             input_duration_s=input_duration_s,
             fitted_duration_s=fitted_duration_s,
             lag_s=start_s - cue_start_s,
-            fit_notes=tuple(notes),
+            fit_notes=fit_result.notes,
             rewrite_direction=direction,
         )
         fitted.append(FittedTurn(logical_turn=turn, audio=fitted_audio, assessment=assessment))

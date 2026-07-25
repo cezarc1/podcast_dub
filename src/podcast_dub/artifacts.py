@@ -13,7 +13,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from podcast_dub.config import JobConfig
-from podcast_dub.models import DevicePlan, ModelIdentity, StageName
+from podcast_dub.types import DevicePlan, ModelIdentity, StageName
 
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
 
@@ -77,11 +77,8 @@ def stable_digest(value: Any) -> str:
 
 
 def file_digest(path: str | os.PathLike[str]) -> str:
-    digest = hashlib.sha256()
     with open(path, "rb") as source:
-        for block in iter(lambda: source.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
+        return hashlib.file_digest(source, "sha256").hexdigest()
 
 
 def atomic_write_text(path: str | os.PathLike[str], text: str) -> None:

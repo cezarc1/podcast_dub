@@ -9,8 +9,8 @@ LLM calls or regenerate audio for work already done. The cache is keyed by
 import os
 
 import podcast_dub.stages.tts as tts
-from podcast_dub.models import RewriteCache, TurnChunkDraft
-from podcast_dub.stages.tts import make_cached_translator
+from podcast_dub.stages.tts import MIN_CACHED_AUDIO_BYTES, make_cached_translator
+from podcast_dub.types import RewriteCache, TurnChunkDraft
 
 
 class TestCachedTranslator:
@@ -120,7 +120,7 @@ def test_tts_translator_binds_job_configuration(monkeypatch):
 
 def test_valid_cached_audio_skips_generation(monkeypatch, tmp_path):
     dst = tmp_path / "rewritten.mp3"
-    dst.write_bytes(b"x" * 1001)
+    dst.write_bytes(b"x" * (MIN_CACHED_AUDIO_BYTES + 1))
     generated = []
     monkeypatch.setattr(tts, "_gen_file", lambda *args: generated.append(args))
 

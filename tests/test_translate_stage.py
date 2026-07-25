@@ -1,7 +1,7 @@
 from podcast_dub.artifacts import ArtifactProvenance, stable_digest, write_artifact_atomic
-from podcast_dub.models import SpeakerPhrase
 from podcast_dub.pipeline_artifacts import SPEAKER_PHRASES, TRANSLATION_UNITS
 from podcast_dub.stages import translate as stage
+from podcast_dub.types import SpeakerPhrase
 
 
 def test_translate_stage_translates_each_phrase_with_source_only_context(monkeypatch, tmp_path, make_job_config):
@@ -59,9 +59,8 @@ def test_translate_stage_translates_each_phrase_with_source_only_context(monkeyp
     monkeypatch.setattr(stage, "BATCH", 2)
     monkeypatch.setattr(stage, "WORKERS", 1)
     monkeypatch.setattr(stage, "PREVIOUS_TURNS", 3)
-    monkeypatch.setattr(stage, "make_translator", fake_factory, raising=False)
+    monkeypatch.setattr(stage, "make_translator", fake_factory)
 
-    assert not hasattr(stage, "llm_batch")
     cfg = make_job_config(
         context="A database performance interview.",
         proper_nouns=("AcmeDB", "Nova"),

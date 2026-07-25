@@ -28,8 +28,8 @@ class TestSilenceDetect:
         a = speech_like(3, 1.0, 0.5)
         iv = silence_intervals(a)
         assert len(iv) == 2
-        for x, y in iv:
-            assert 0.4 < (y - x) / SR < 0.6
+        for interval in iv:
+            assert 0.4 < (interval.end_sample - interval.start_sample) / SR < 0.6
 
     def test_no_gaps_in_continuous(self):
         assert silence_intervals(beep(2.0)) == []
@@ -57,6 +57,12 @@ class TestPauseOps:
 
 
 class TestFitPolicy:
+    def test_result_exposes_named_fields(self):
+        a = beep(1.0)
+        result = fit_audio(a, 1.0)
+        assert result.audio is a
+        assert result.notes == ()
+
     def test_long_within_reach_fits(self):
         a = speech_like(6, 1.5, 0.5)  # ~11.5s into a 10s window (1.15x)
         b, rep = fit_audio(a, 10.0)
@@ -69,11 +75,16 @@ class TestFitPolicy:
         a = speech_like(6, 2.0, 0.8)  # ~16s into a 10s window (1.6x)
         b, rep = fit_audio(a, 10.0)
         assert dur(b) < dur(a)
-        # policy: full cap applied; leftover misfit either <=20% or flagged
+        # policy: pause-compress first, then the FULL tempo cap (1.12x), and no
+        # more. 16s -> ~12.7s by compression -> ~11.36s at the cap: still long,
+        # but inside the 20% rewrite tolerance, so no rewrite is requested.
+        # Assert both halves separately: "misfit <= 1.2 or needs_rewrite(...)"
+        # is unconditionally true, since needs_rewrite IS misfit > 1.2 or < 0.9.
         from podcast_dub.fit import misfit
 
-        assert misfit(b, 10.0) <= 1.2 or needs_rewrite(b, 10.0)
-        assert rep
+        assert 1.10 < misfit(b, 10.0) <= 1.2
+        assert not needs_rewrite(b, 10.0)
+        assert rep == ("pause-compress -3.3s", "fast 1.12")
 
     def test_short_within_stretch_cap_fits(self):
         a = speech_like(5, 1.5, 0.5)  # ~9.5s... in a 10.5s window -> +1s stretch
@@ -96,10 +107,14 @@ class TestFitPolicy:
         assert needs_rewrite(b, 10.0)  # can't stretch 3x: rewrite with fuller text
 
     def test_in_window_untouched(self):
-        a = speech_like(4, 1.0, 0.3)  # ~4.9s; window 5.0s
-        b, rep = fit_audio(a, 5.0)
+        # 4.9s in a 4.95s window sits strictly inside both policy edges
+        # (> 4.95*0.98 = 4.851 and < 4.95*1.005 = 4.975). Keep it off the
+        # SHORT_OK boundary, where a float nudge would silently change which
+        # branch this exercises.
+        a = speech_like(4, 1.0, 0.3)  # ~4.9s
+        b, rep = fit_audio(a, 4.95)
         assert np.allclose(dur(b), dur(a), atol=0.05)
-        assert rep == []
+        assert rep == ()
 
     def test_rewrite_flag(self):
         assert needs_rewrite(beep(20.0), 10.0)

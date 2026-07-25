@@ -35,7 +35,7 @@ dependencies = [
     # -> run those stages in a separate venv (.venv-asr) with transformers==5.14.1
     "dspy>=3.3.0b1",
     "openai>=2.48.0",
-    "pydantic>=2.10.6,<3",
+    "pydantic>=2.11,<3",
     "silero-vad>=5.1",
     "yt-dlp>=2025.1.1",
     "tqdm>=4.66",

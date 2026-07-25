@@ -1,3 +1,4 @@
+import os
 import subprocess
 import wave
 
@@ -6,7 +7,7 @@ import numpy as np
 SR = 44100
 
 
-def dur_of(path: str) -> float:
+def dur_of(path: str | os.PathLike[str]) -> float:
     out = subprocess.run(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path],
         capture_output=True,
@@ -26,9 +27,11 @@ def atempo_filters(tempo: float) -> list[str]:
     return filters
 
 
-def decode_f32(path: str, tempo: float | None = 1.0, *, sr: int = SR, duration_s: float | None = None) -> np.ndarray:
+def decode_f32(
+    path: str | os.PathLike[str], tempo: float | None = 1.0, *, sr: int = SR, duration_s: float | None = None
+) -> np.ndarray:
     """Decode audio to mono float32 at sr; optionally tempo-adjusted and input-duration-limited."""
-    cmd = ["ffmpeg", "-v", "error"]
+    cmd: list[str | os.PathLike[str]] = ["ffmpeg", "-v", "error"]
     if duration_s is not None:
         cmd += ["-t", str(duration_s)]
     cmd += ["-i", path]
@@ -41,9 +44,9 @@ def decode_f32(path: str, tempo: float | None = 1.0, *, sr: int = SR, duration_s
     return np.frombuffer(r.stdout, dtype=np.float32).copy()
 
 
-def write_wav_pcm16(path: str, pcm: np.ndarray, sr: int) -> None:
+def write_wav_pcm16(path: str | os.PathLike[str], pcm: np.ndarray, sr: int) -> None:
     """Write mono 16-bit PCM samples as a RIFF wav."""
-    with wave.open(path, "wb") as wav_file:
+    with wave.open(os.fspath(path), "wb") as wav_file:
         wav_file.setnchannels(1)
         wav_file.setsampwidth(2)
         wav_file.setframerate(sr)
@@ -51,7 +54,14 @@ def write_wav_pcm16(path: str, pcm: np.ndarray, sr: int) -> None:
 
 
 def srt_ts(t: float) -> str:
+    """Format seconds as an SRT timestamp (HH:MM:SS,mmm)"""
     h = int(t // 3600)
     m = int(t % 3600 // 60)
-    s = t % 60
-    return f"{h:02d}:{m:02d}:{s:06.3f}".replace(".", ",")
+    seconds = f"{t % 60:06.3f}"
+    if seconds == "60.000":
+        seconds = "00.000"
+        m += 1
+        if m == 60:
+            m = 0
+            h += 1
+    return f"{h:02d}:{m:02d}:{seconds}".replace(".", ",")

@@ -11,7 +11,7 @@ from pathlib import Path
 from pydantic import TypeAdapter, ValidationError
 
 from podcast_dub.artifacts import atomic_write_text
-from podcast_dub.models import ManifestEvent
+from podcast_dub.types import ManifestEvent
 
 LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 LOG_FILE = os.path.join(LOG_DIR, "translations.jsonl")

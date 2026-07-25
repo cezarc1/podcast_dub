@@ -1,6 +1,3 @@
-import importlib
-import importlib.util
-
 import dspy
 import pytest
 from dspy import Prediction
@@ -10,17 +7,6 @@ from podcast_dub.translate import (
     _word_fit_reward,
     make_translator,
 )
-
-
-def test_dspy_translation_module_has_domain_name():
-    assert importlib.util.find_spec("podcast_dub.translate") is not None
-
-
-def test_translation_module_exposes_unified_translator_api():
-    translation = importlib.import_module("podcast_dub.translate")
-
-    assert hasattr(translation, "TranslateSpokenASR")
-    assert hasattr(translation, "make_translator")
 
 
 def test_translation_signature_fits_a_single_text_to_a_word_count():
