@@ -136,19 +136,19 @@ Linux currently resolves the project's pinned CUDA 13.0 PyTorch wheels.
 `--extra cuda` additionally installs FlashAttention for the main TTS
 environment; it is not GPU auto-detection.
 
-### ASR and diarization helpers
+### ASR helper
 
-ASR needs Transformers 5.x while TTS needs Transformers 4.x, and NeMo has its
-own dependency constraints. Create the two helper environments once:
+Diarization runs in the main environment: NeMo asks for `transformers~=4.57.0`,
+which already admits the `4.57.3` that Qwen3-TTS pins, so `uv sync` installs
+both together.
+
+ASR is the one stage that cannot share it — Qwen3-ASR needs Transformers 5.x
+while Qwen3-TTS pins 4.x. Create that single helper environment once:
 
 ```bash
 uv venv --python 3.12 .venv-asr
 uv pip install --python .venv-asr/bin/python --torch-backend=auto \
     'transformers==5.14.1' torch torchaudio accelerate librosa soundfile 'pydantic>=2.10,<3'
-
-uv venv --python 3.12 .venv-nemo
-uv pip install --python .venv-nemo/bin/python --torch-backend=auto \
-    'nemo_toolkit[asr]' torch torchaudio 'pydantic>=2.10,<3'
 
 # Linux/NVIDIA only: the CUDA plan also uses FlashAttention in the ASR helper
 uv pip install --python .venv-asr/bin/python --no-build-isolation 'flash-attn>=2.7.4'
@@ -156,10 +156,12 @@ uv pip install --python .venv-asr/bin/python --no-build-isolation 'flash-attn>=2
 export DUB_TRANSLATE_API_KEY="<translation-api-key>"
 ```
 
-The default helper paths are `.venv-asr/bin/python` and
-`.venv-nemo/bin/python`. Set `DUB_ASR_PYTHON` or `DUB_NEMO_PYTHON` only when
-using a different location. If no compatible FlashAttention wheel exists for
-the CUDA ASR environment, building it requires a matching CUDA toolkit.
+The default helper path is `.venv-asr/bin/python`; set `DUB_ASR_PYTHON` only
+when using a different location. If no compatible FlashAttention wheel exists
+for the CUDA ASR environment, building it requires a matching CUDA toolkit.
+
+`DUB_NEMO_PYTHON` still works if you prefer to keep diarization in its own
+environment: point it at that interpreter and the stage runs there instead.
 
 ## Pipeline
 

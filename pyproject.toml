@@ -24,13 +24,17 @@ dependencies = [
     "numpy>=2.0",
     "soundfile>=0.13",
     "huggingface-hub>=0.36",
-    # qwen-tts leaves this transitive floor open; older numba releases cannot
-    # build on the Python 3.12 required by this project.
+    # qwen-tts and nemo leave this transitive floor open; older numba releases
+    # cannot build on the Python 3.12 required by this project.
     "numba>=0.61",
     "qwen-tts",
     # TTS path: qwen-tts is incompatible with transformers 5.x (pin 4.x)
     "transformers==4.57.3",
     "accelerate",
+    # Diarization: NeMo asks for transformers~=4.57.0, which already admits
+    # qwen-tts's ==4.57.3, so Sortformer shares this environment. diarize.py
+    # then takes its inline path; the DUB_NEMO_PYTHON helper stays as a fallback.
+    "nemo_toolkit[asr]",
     # ASR path NOTE: Qwen3-ASR-1.7B + ForcedAligner need transformers>=5.x
     # -> run those stages in a separate venv (.venv-asr) with transformers==5.14.1
     "dspy>=3.3.0b1",

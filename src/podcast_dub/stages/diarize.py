@@ -101,11 +101,11 @@ def run_diarize(cfg: JobConfig) -> str:
 
 def _have_nemo() -> bool:
     try:
-        import nemo.collections.asr.models  # noqa: F401  # ty: ignore[unresolved-import]
+        import nemo.collections.asr.models  # noqa: F401
 
         return True
     except Exception:
-        logger.warning("diarize: WARNING no NeMo (set DUB_NEMO_PYTHON or create .venv-nemo)")
+        logger.warning("diarize: WARNING no NeMo (set DUB_NEMO_PYTHON or install the project extras)")
         return False
 
 
@@ -144,7 +144,7 @@ def _produce_segments(request: DiarizationBackendRequest, workdir: str) -> tuple
 def _run_sortformer(request: DiarizationBackendRequest) -> tuple[DiarizationSegment, ...]:
     import torch
     from huggingface_hub import hf_hub_download
-    from nemo.collections.asr.models import SortformerEncLabelModel  # ty: ignore[unresolved-import]
+    from nemo.collections.asr.models import SortformerEncLabelModel
 
     checkpoint = hf_hub_download(
         repo_id=SORTFORMER_ID,
