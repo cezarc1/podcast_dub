@@ -8,6 +8,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from itertools import batched
 from pathlib import Path
+from typing import NamedTuple
 
 from tqdm import tqdm
 
@@ -39,6 +40,10 @@ TRANSLATION_CACHE_VERSION = 4
 
 logger = logging.getLogger(__name__)
 
+class _TranslationWork(NamedTuple):
+    batch_index: int
+    indexes: tuple[int, ...]
+    batch_path: Path
 
 def _read_batch(path: Path) -> TranslationBatch:
     try:
@@ -98,7 +103,7 @@ def run_translate(cfg: JobConfig) -> str:
     batches = list(batched(range(len(phrases)), BATCH))
     cached_batches = {path.name: _read_batch(path) for path in tr_dir.glob("batch_*.json")}
     todo = [
-        (batch_index, indexes, tr_dir / f"batch_{batch_index:03d}.json")
+        _TranslationWork(batch_index=batch_index, indexes=indexes, batch_path=tr_dir / f"batch_{batch_index:03d}.json")
         for batch_index, indexes in enumerate(batches)
         if f"batch_{batch_index:03d}.json" not in cached_batches
     ]
@@ -115,10 +120,13 @@ def run_translate(cfg: JobConfig) -> str:
     def _previous_context(index: int) -> str:
         return " ".join(phrases[j].text for j in range(max(0, index - PREVIOUS_TURNS), index))
 
-    def work(task: tuple[int, tuple[int, ...], Path]) -> int:
-        batch_index, indexes, batch_path = task
+    def work(task: _TranslationWork) -> int:
+        """
+        Performs the translation for a batch of phrases and writes the results to a local file.
+        Returns the batch index after successful translation.
+        """
         translations = {}
-        for i in indexes:
+        for i in task.indexes:
             translated = translator(
                 previous_context=_previous_context(i),
                 text_to_translate=phrases[i].text,
@@ -127,12 +135,12 @@ def run_translate(cfg: JobConfig) -> str:
             if not translated:
                 raise RuntimeError(f"translate: phrase {i} returned empty translation")
             translations[i] = translated
-        batch = TranslationBatch(batch_index=batch_index, translations=translations)
-        _write_batch(batch_path, batch)
+        batch = TranslationBatch(batch_index=task.batch_index, translations=translations)
+        _write_batch(task.batch_path, batch)
         manifest.log_event(
             TranslateEvent(
-                batch_index=batch_index,
-                ids=indexes,
+                batch_index=task.batch_index,
+                ids=task.indexes,
                 model=translation_api.model_name,
                 lines=tuple(
                     TranslationManifestLine(
@@ -140,11 +148,11 @@ def run_translate(cfg: JobConfig) -> str:
                         source_text=phrases[i].text,
                         target_text=translations[i],
                     )
-                    for i in indexes
+                    for i in task.indexes
                 ),
             )
         )
-        return batch_index
+        return task.batch_index
 
     with ThreadPoolExecutor(max_workers=WORKERS) as executor:
         for batch_index in tqdm(executor.map(work, todo), total=len(todo), desc="translate", unit="batch"):
