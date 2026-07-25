@@ -5,6 +5,9 @@ from podcast_dub.stages import translate as stage
 
 
 def test_translate_stage_translates_each_phrase_with_source_only_context(monkeypatch, tmp_path, make_job_config):
+    monkeypatch.delenv("DUB_TRANSLATE_BASE_URL", raising=False)
+    monkeypatch.delenv("DUB_TRANSLATE_MODEL", raising=False)
+    monkeypatch.delenv("DUB_TRANSLATE_API_KEY", raising=False)
     phrases = (
         SpeakerPhrase(start=0.0, end=1.0, speaker="S0", text="first"),
         SpeakerPhrase(start=1.0, end=2.0, speaker="S0", text="second"),
@@ -57,13 +60,15 @@ def test_translate_stage_translates_each_phrase_with_source_only_context(monkeyp
     monkeypatch.setattr(stage, "WORKERS", 1)
     monkeypatch.setattr(stage, "PREVIOUS_TURNS", 3)
     monkeypatch.setattr(stage, "make_translator", fake_factory, raising=False)
-    monkeypatch.setattr(stage, "_api", lambda cfg: ("https://example.test/v1", "test-model", "secret"))
 
     assert not hasattr(stage, "llm_batch")
     cfg = make_job_config(
         context="A database performance interview.",
         proper_nouns=("AcmeDB", "Nova"),
         glossary={"查询": "query"},
+        llm_base="https://example.test/v1",
+        llm_model="test-model",
+        llm_key="secret",
     )
     out = stage.run_translate(cfg)
 
@@ -97,9 +102,8 @@ def test_translate_stage_translates_each_phrase_with_source_only_context(monkeyp
     # A different model changes provenance -> cache miss -> everything re-translates.
     calls.pop("factory")
     translate_calls.clear()
-    monkeypatch.setattr(stage, "_api", lambda cfg: ("https://example.test/v1", "second-model", "secret"))
 
-    stage.run_translate(cfg)
+    stage.run_translate(cfg.validated_copy(llm_model="second-model"))
 
     assert calls["factory"] == {
         "api_key": "secret",
@@ -112,21 +116,3 @@ def test_translate_stage_translates_each_phrase_with_source_only_context(monkeyp
         "glossary": {"查询": "query"},
     }
     assert len(translate_calls) == 4
-
-
-def test_openai_api_key_is_not_forwarded_to_the_translation_endpoint(monkeypatch, make_job_config):
-    monkeypatch.delenv("DUB_TRANSLATE_API_KEY", raising=False)
-    monkeypatch.setenv("OPENAI_API_KEY", "must-not-leave-openai")
-
-    _, _, key = stage._api(make_job_config())
-
-    assert key == ""
-
-
-def test_dub_translation_key_takes_precedence(monkeypatch, make_job_config):
-    monkeypatch.setenv("DUB_TRANSLATE_API_KEY", "translation-key")
-    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
-
-    _, _, key = stage._api(make_job_config(llm_key="config-key"))
-
-    assert key == "config-key"

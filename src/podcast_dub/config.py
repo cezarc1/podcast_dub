@@ -5,12 +5,16 @@ from __future__ import annotations
 import os
 import tomllib
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from enum import StrEnum, auto
 from typing import Any
 
 from pydantic import AliasChoices, ConfigDict, Field, field_validator, model_validator
 
 from podcast_dub.models import ConcreteDevice, StrictModel
+
+DEFAULT_TRANSLATE_BASE_URL = "https://api.moonshot.ai/v1"
+DEFAULT_TRANSLATE_MODEL = "kimi-k3"
 
 
 class Language(StrEnum):
@@ -81,6 +85,15 @@ def lang_name(code: str) -> str:
         return code
 
 
+@dataclass(frozen=True, slots=True)
+class TranslationAPISettings:
+    """Resolved settings for an OpenAI-compatible translation endpoint."""
+
+    base_url: str
+    model_name: str
+    api_key: str = field(repr=False)
+
+
 class _ConfigModel(StrictModel):
     """StrictModel (closed schema, immutable, validated_copy) plus TOML alias support."""
 
@@ -149,8 +162,8 @@ class JobConfig(_JobConfigBase):
     speaker_names: tuple[str, ...] = ()
     workdir: str = ""
     window_s: float = Field(default=0.0, ge=0)
-    llm_model: str = Field(default="kimi-k3", min_length=1)
-    llm_base: str = Field(default="https://api.moonshot.ai/v1", min_length=1)
+    llm_model: str = Field(default=DEFAULT_TRANSLATE_MODEL, min_length=1)
+    llm_base: str = Field(default=DEFAULT_TRANSLATE_BASE_URL, min_length=1)
     llm_key: str = Field(default="", repr=False, exclude=True)
     asr_device: DeviceChoice = DeviceChoice.AUTO
     diarize_device: DiarizeDeviceChoice = DiarizeDeviceChoice.AUTO
@@ -185,6 +198,15 @@ class JobConfig(_JobConfigBase):
 
     def provenance_config(self) -> dict[str, Any]:
         return self.model_dump(mode="json", exclude={"llm_key"})
+
+
+def resolve_translation_api(cfg: JobConfig) -> TranslationAPISettings:
+    """Resolve per-run translation settings without consulting unrelated provider variables."""
+    return TranslationAPISettings(
+        base_url=os.environ.get("DUB_TRANSLATE_BASE_URL", cfg.llm_base),
+        model_name=os.environ.get("DUB_TRANSLATE_MODEL", cfg.llm_model),
+        api_key=cfg.llm_key or os.environ.get("DUB_TRANSLATE_API_KEY", ""),
+    )
 
 
 def load_toml(path: str | os.PathLike[str]) -> JobConfigInput:

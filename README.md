@@ -21,8 +21,8 @@ Dubs a video podcast into another language using all open-weight models:
 uv run podcast_dub "./interview.mp4" --from zh --to en
 ```
 
-`DUB_TRANSLATE_API_KEY` must already be set to a key for the configured
-Moonshot-compatible translation endpoint.
+Translation defaults to Kimi K3 through Moonshot's OpenAI-compatible API.
+`DUB_TRANSLATE_API_KEY` must already be set to the corresponding API key.
 
 The complete pipeline runs and writes:
 
@@ -63,6 +63,31 @@ contents change without its filename changing, choose a fresh `--workdir` so
 the extracted source audio cannot be reused. Version 0.1 does not yet include
 the ASR/NeMo helper dependency locks in artifact provenance, so also use a
 fresh workdir after changing either helper environment.
+
+## Configure translation
+
+Moonshot and Kimi K3 are the defaults. To use another OpenAI-compatible
+service, such as OpenAI, OpenRouter, or Ollama, set the endpoint, model, and
+key together:
+
+```bash
+export DUB_TRANSLATE_BASE_URL="https://provider.example/v1"
+export DUB_TRANSLATE_MODEL="provider-model-id"
+export DUB_TRANSLATE_API_KEY="<translation-api-key>"
+```
+
+`DUB_TRANSLATE_BASE_URL` is the API base URL; do not include
+`/chat/completions`. The pipeline appends the operation path. A non-empty key
+is still required when a local endpoint ignores authentication, so use the
+placeholder value documented by that endpoint.
+
+For a repeatable job, `llm_base` and `llm_model` can instead be set in
+`dub.toml`; the environment variables override those values for one-off runs.
+Keep the key in `DUB_TRANSLATE_API_KEY` rather than storing it in the job file.
+
+The configured endpoint must speak the OpenAI-compatible protocol. A direct
+Anthropic Messages API URL is not supported; use an OpenAI-compatible gateway
+such as OpenRouter to run Claude models.
 
 ## Install
 
@@ -108,7 +133,7 @@ uv pip install --python .venv-nemo/bin/python --torch-backend=auto \
 # Linux/NVIDIA only: the CUDA plan also uses FlashAttention in the ASR helper
 uv pip install --python .venv-asr/bin/python --no-build-isolation 'flash-attn>=2.7.4'
 
-export DUB_TRANSLATE_API_KEY="<moonshot-api-key>"
+export DUB_TRANSLATE_API_KEY="<translation-api-key>"
 ```
 
 The default helper paths are `.venv-asr/bin/python` and
@@ -127,7 +152,7 @@ translation → TTS → placement + mix → mp4`
 | asr | Qwen3-ASR-1.7B + Qwen3-ForcedAligner | caption-free phrase + word timings (runs in `.venv-asr`, transformers 5.x) |
 | diarize | NVIDIA Sortformer (NeMo, in `.venv-nemo`) | up to four speakers; splits phrases at sustained speaker handoffs to reduce cross-speaker TTS |
 | refs | auto-mined from diarization | ~60 s clean solo audio per speaker, full timeline |
-| translate | DSPy + kimi-k3 (Moonshot) | repairs spoken-ASR noise, uses preceding source conversation turns, emits TTS-ready speech, and logs every batch to `<workdir>/translations.jsonl` |
+| translate | DSPy + kimi-k3 (Moonshot default) | repairs spoken-ASR noise, uses preceding source conversation turns, emits TTS-ready speech, and logs every batch to `<workdir>/translations.jsonl` |
 | tts | Qwen3-TTS-12Hz-1.7B (local) | stage-specific CUDA/MPS/CPU selection, x_vector-only voice cloning, measurement-verified DSPy.Refine rewrite loop |
 | place | ffmpeg + `fit.py` + verification | anchored chaining, hard anti-drift windows, capped speedups only, sidechain-ducked original bed; publishes the mp4 only after coverage/dead-air verification passes |
 

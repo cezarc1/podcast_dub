@@ -20,7 +20,7 @@ from podcast_dub.artifacts import (
     stable_digest,
     write_artifact_atomic,
 )
-from podcast_dub.config import JobConfig, lang_name
+from podcast_dub.config import JobConfig, lang_name, resolve_translation_api
 from podcast_dub.models import (
     ModelIdentity,
     TranslateEvent,
@@ -40,13 +40,6 @@ TRANSLATION_CACHE_VERSION = 4
 logger = logging.getLogger(__name__)
 
 
-def _api(cfg: JobConfig) -> tuple[str, str, str]:
-    base = os.environ.get("DUB_TRANSLATE_BASE_URL", cfg.llm_base)
-    model = os.environ.get("DUB_TRANSLATE_MODEL", cfg.llm_model)
-    key = cfg.llm_key or os.environ.get("DUB_TRANSLATE_API_KEY", "")
-    return base, model, key
-
-
 def _read_batch(path: Path) -> TranslationBatch:
     try:
         return TranslationBatch.model_validate_json(path.read_bytes())
@@ -62,7 +55,7 @@ def run_translate(cfg: JobConfig) -> str:
     workdir = cfg.resolved_workdir()
     out = os.path.join(workdir, "units.json")
     phrases_path = os.path.join(workdir, "phrases_spk.json")
-    base, model, key = _api(cfg)
+    translation_api = resolve_translation_api(cfg)
     provenance = build_provenance(
         cfg,
         input_files={"speaker_phrases": phrases_path},
@@ -70,27 +63,27 @@ def run_translate(cfg: JobConfig) -> str:
             "cache_version": TRANSLATION_CACHE_VERSION,
             "source_language": lang_name(cfg.source_lang),
             "target_language": lang_name(cfg.target_lang),
-            "base": base,
+            "base": translation_api.base_url,
             "window_s": cfg.window_s,
             "batch_size": BATCH,
             "previous_turns": PREVIOUS_TURNS,
             "words_per_second": WORDS_PER_SECOND,
         },
-        model=ModelIdentity(identifier=model),
+        model=ModelIdentity(identifier=translation_api.model_name),
     )
     if load_cached_artifact(out, TRANSLATION_UNITS, provenance) is not None:
         print(f"translate: cached {out}")
         return out
 
     manifest.configure(workdir)
-    if not key:
+    if not translation_api.api_key:
         sys.exit("translate: no API key (set DUB_TRANSLATE_API_KEY)")
     translator = make_translator(
-        key,
+        translation_api.api_key,
         source_language=lang_name(cfg.source_lang),
         target_language=lang_name(cfg.target_lang),
-        base_url=base,
-        model_name=model,
+        base_url=translation_api.base_url,
+        model_name=translation_api.model_name,
         job_context=cfg.context,
         proper_nouns=cfg.proper_nouns,
         glossary=cfg.glossary_map,
@@ -138,7 +131,7 @@ def run_translate(cfg: JobConfig) -> str:
             TranslateEvent(
                 batch_index=batch_index,
                 ids=indexes,
-                model=model,
+                model=translation_api.model_name,
                 lines=tuple(
                     TranslationManifestLine(
                         id=i,

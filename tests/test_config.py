@@ -3,7 +3,7 @@ import argparse
 import pytest
 from pydantic import ValidationError
 
-from podcast_dub.config import load_toml, merge_cli
+from podcast_dub.config import load_toml, merge_cli, resolve_translation_api
 
 
 def test_load_toml_reads_llm_configuration(tmp_path):
@@ -98,6 +98,53 @@ def test_final_config_rejects_same_language(tmp_path):
 
     with pytest.raises(ValidationError, match="different"):
         merge_cli(load_toml(config), argparse.Namespace())
+
+
+def test_translation_api_uses_moonshot_defaults(monkeypatch, make_job_config):
+    monkeypatch.delenv("DUB_TRANSLATE_BASE_URL", raising=False)
+    monkeypatch.delenv("DUB_TRANSLATE_MODEL", raising=False)
+    monkeypatch.delenv("DUB_TRANSLATE_API_KEY", raising=False)
+
+    settings = resolve_translation_api(make_job_config())
+
+    assert settings.base_url == "https://api.moonshot.ai/v1"
+    assert settings.model_name == "kimi-k3"
+    assert settings.api_key == ""
+
+
+def test_translation_environment_overrides_configured_base_and_model(monkeypatch, make_job_config):
+    monkeypatch.setenv("DUB_TRANSLATE_BASE_URL", "https://environment.test/v1")
+    monkeypatch.setenv("DUB_TRANSLATE_MODEL", "environment-model")
+
+    settings = resolve_translation_api(make_job_config(llm_base="https://config.test/v1", llm_model="config-model"))
+
+    assert settings.base_url == "https://environment.test/v1"
+    assert settings.model_name == "environment-model"
+
+
+def test_configured_translation_key_takes_precedence(monkeypatch, make_job_config):
+    monkeypatch.setenv("DUB_TRANSLATE_API_KEY", "environment-key")
+
+    settings = resolve_translation_api(make_job_config(llm_key="config-key"))
+
+    assert settings.api_key == "config-key"
+
+
+def test_openai_api_key_is_ignored_for_translation(monkeypatch, make_job_config):
+    monkeypatch.delenv("DUB_TRANSLATE_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "must-not-leave-openai")
+
+    settings = resolve_translation_api(make_job_config())
+
+    assert settings.api_key == ""
+
+
+def test_translation_settings_repr_redacts_api_key(monkeypatch, make_job_config):
+    monkeypatch.setenv("DUB_TRANSLATE_API_KEY", "translation-secret")
+
+    settings = resolve_translation_api(make_job_config())
+
+    assert "translation-secret" not in repr(settings)
 
 
 @pytest.mark.parametrize(

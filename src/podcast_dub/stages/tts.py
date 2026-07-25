@@ -32,7 +32,7 @@ from podcast_dub.artifacts import (
     write_artifact_atomic,
 )
 from podcast_dub.audio_utils import decode_f32, dur_of
-from podcast_dub.config import JobConfig, lang_name
+from podcast_dub.config import JobConfig, lang_name, resolve_translation_api
 from podcast_dub.device_utils import model_kwargs, resolve_device_plan
 from podcast_dub.model_catalog import TTS_ID, TTS_REVISION, validate_model_snapshot
 from podcast_dub.models import (
@@ -517,8 +517,9 @@ def run_tts(cfg: JobConfig) -> str:
     out_json = os.path.join(workdir, "turns.json")
     units_path = os.path.join(workdir, "units.json")
     references_path = os.path.join(workdir, "refs", "references.json")
-    base = os.environ.get("DUB_TRANSLATE_BASE_URL", cfg.llm_base)
-    llm_model = os.environ.get("DUB_TRANSLATE_MODEL", cfg.llm_model)
+    translation_api = resolve_translation_api(cfg)
+    base = translation_api.base_url
+    llm_model = translation_api.model_name
     target_language = lang_name(cfg.target_lang)
     plan = resolve_device_plan(ModelStage.TTS, cfg.tts_device)
     provenance = build_provenance(
@@ -621,7 +622,7 @@ def run_tts(cfg: JobConfig) -> str:
         )
         progress.set_postfix_str(f"{time.time() - started:.0f}s/chunk")
 
-    key = cfg.llm_key or os.environ.get("DUB_TRANSLATE_API_KEY", "")
+    key = translation_api.api_key
     cached_translator: _CachedTranslator | None = None
     if key:
         translator = make_translator(

@@ -6,9 +6,6 @@ from typing import Protocol
 import dspy
 from dspy import Prediction
 
-DEFAULT_BASE = "https://api.moonshot.ai/v1"
-DEFAULT_MODEL = "kimi-k3"
-
 
 class TranslateSpokenASR(dspy.Signature):
     """

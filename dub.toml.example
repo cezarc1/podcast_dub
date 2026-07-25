@@ -12,6 +12,8 @@ target_lang = "en"
 # asr_device = "auto"       # auto | cuda | mps | cpu
 # diarize_device = "auto"   # auto | cuda | cpu
 # tts_device = "auto"       # auto | cuda | mps | cpu
+# Default OpenAI-compatible translation model and API base URL.
 llm_model = "kimi-k3"
-llm_base = "https://api.moonshot.ai/v1"
+llm_base = "https://api.moonshot.ai/v1"  # API base only; do not append /chat/completions
+# DUB_TRANSLATE_MODEL and DUB_TRANSLATE_BASE_URL override these values.
 # Set DUB_TRANSLATE_API_KEY in the environment; do not store credentials here.
