@@ -30,6 +30,7 @@ from typing import Final
 from pydantic import ValidationError
 
 from podcast_dub.audio_utils import dur_of
+from podcast_dub.branding import show_banner
 from podcast_dub.config import JobConfig, JobConfigInput, load_toml, merge_cli
 from podcast_dub.device_utils import resolve_device_plan
 from podcast_dub.logging_config import configure_logging
@@ -129,15 +130,17 @@ def main() -> None:
         logger.error("\nusage: podcast_dub <video> --from <lang> --to <lang> [--config dub.toml]")
         sys.exit(2)
 
-    logger.info(f"job: {os.path.basename(cfg.video)}  {cfg.source_lang} -> {cfg.target_lang}")
-    logger.info(f"workdir: {cfg.resolved_workdir()}")
-    logger.info(f"output: {cfg.resolved_output()}")
     stages = [s.strip() for s in args.stages.split(",")]
-    logger.info(f"stages: {', '.join(stages)}")
     # Validate the whole selection up front: a typo in a later stage must not cost a
     # full run of the earlier ones before it is reported.
     if unknown := [stage for stage in stages if stage not in _KNOWN_STAGES]:
         sys.exit(f"unknown stage: {', '.join(unknown)}")
+
+    show_banner()
+    logger.info(f"job: {os.path.basename(cfg.video)}  {cfg.source_lang} -> {cfg.target_lang}")
+    logger.info(f"workdir: {cfg.resolved_workdir()}")
+    logger.info(f"output: {cfg.resolved_output()}")
+    logger.info(f"stages: {', '.join(stages)}")
     plans = (
         resolve_device_plan(ModelStage.ASR, cfg.asr_device),
         resolve_device_plan(ModelStage.DIARIZE, cfg.diarize_device),
